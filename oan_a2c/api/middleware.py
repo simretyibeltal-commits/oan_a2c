@@ -6,7 +6,10 @@ def validate_jwt_request(request=None):
     Middleware bound to Frappe's auth_hooks.
     Intercepts and validates JWTs for the oan_a2c API namespace.
     """
-    path = frappe.request.path
+    # frappe.local.request is the Werkzeug request object set per-thread.
+    # Using frappe.request here would be ambiguous — frappe.local.request is explicit
+    # and matches what test stubs patch directly.
+    path = frappe.local.request.path
     
     # We only care about our own API boundary. 
     # Let Frappe handle desk access and standard APIs normally.
