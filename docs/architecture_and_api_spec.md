@@ -72,6 +72,102 @@ To prevent horizontal privilege escalation (e.g., Bank Agent A seeing Bank Agent
 
 ---
 
+### **3.3 Lead Management Database Schema (A2C Lead)**
+The `A2C Lead` DocType acts as the absolute top of the funnel. It is designed to be extremely lightweight, capturing the initial point of contact (usually an automated missed call log) before any heavy agricultural or identity profiling begins.
+
+#### **Lead Metadata**
+| Field ID | Label | Field Type | Parameters / Options | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `phone_number` | Phone Number | Data (Phone) | Mandatory, Unique (active leads) | The primary identifier captured from the missed call or IVR system. |
+| `lead_source` | Source | Select | `Missed Call`, `IVR`, `SMS`, `Agent Entry` | Origin of the lead (defaults to Missed Call). |
+| `status` | Lead Status | Select | `Open`, `Contacted`, `Interested`, `Not Interested`, `Converted` | Workflow state of the initial discovery call. |
+| `assigned_to` | Assigned Agent | Link | `User` (DocType) | The call center agent or DA tasked with calling the farmer back. |
+| `call_notes` | Initial Call Notes | Text | Multiline | Brief summary of the initial discovery call. |
+| `linked_credit_case`| Converted Credit Case | Link | `A2C Credit Case` (DocType) | Read-only reference populated automatically when the lead expresses interest. |
+
+**Lead Lifecycle Constraint:** The sole purpose of this DocType is to track whether the farmer is interested. Once the `status` reaches **`Interested`** and the `A2C Credit Case` is initialized, this Lead document becomes immutable (locked). All subsequent heavy data gathering (names, addresses, farm details) happens entirely inside the `A2C Credit Case`.
+
+---
+
+### **3.4 Credit Case Database Schema (Input Fields)**
+To satisfy the pre-qualification and data gathering phase, the `A2C Credit Case` DocType will be built using the following structural data fields, grouped into distinct sections:
+
+#### **Section A: Loan Requirements**
+| Field ID | Label | Field Type | Parameters / Options | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `loan_type` | Loan Type | Select | `Input Financing`, `Machinery/Equipment`, `Conventional`, `Murabaha (Islamic Financing)` | Mandatory field for the category of credit requested. |
+| `loan_purpose` | Purpose of loan | Data | e.g. "Agro-processing" | Specific agricultural application. |
+| `requested_amount` | Requested Loan Amount (ETB) | Currency | Numeric | Minimum amount requested for underwriting. |
+| `loan_duration` | Loan Duration (Months) | Select | `12 Months (1 Year)`, `24 Months (2 Years)`, `36 Months (3 Years)` | Period of recovery. |
+| `nearest_branch` | Nearest Branch Responsible for Loan Administration | Link | `Branch` (DocType link) | Geographical servicing branch. |
+
+#### **Section B: Crop & Land Information**
+| Field ID | Label | Field Type | Parameters / Options | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `primary_crop` | Primary Crop/Seed Variety | Select | `Barley`, `Wheat`, `Soybeans`, `Maize`, `Other Variety` | Primary crop classification. |
+| `crop_variety` | Crop Variety | Select | Dropdown dependent on `primary_crop` | Specific seed strain variation. |
+| `address` | Address | Data | String | General farmer location. |
+| `seed_qty_requested` | Quantity Requested (Kg) | Float | Numeric | Mass of seeds required. |
+| `seed_unit_price` | Unit Price | Currency | Numeric | Cost per Kg. |
+| `total_seed_cost` | Total Seed Cost | Currency | Formula: `seed_qty_requested` * `seed_unit_price` | Autocalculated or entered cost. |
+| `land_size` | Land Size (Hectares) | Float | Numeric | Farm land area in hectares. |
+| `expected_yield` | Expected Yield (Quintals/Hectare) | Float | Numeric | Expected productivity metrics. |
+| `expected_harvest_date` | Expected Harvest Date | Date | Calendar Selection | Expected harvest period for crop security. |
+| `fertilizer_used` | Fertilizer Used | Data | String | Type of soil enhancement deployed. |
+| `other_farming_activities` | Other Farming Activities | Select | `Cattle`, `Poultry`, `Sheep&Goats`, `Other income sources` | Diversified agricultural streams. |
+| `farmer_group` | Farmer Group | Data | String | Cooperative or community aggregation group. |
+| `animal_housed` | Animal Housed (Heads) | Int | Numeric | Livestock count. |
+| `farm_equipped` | Farm Equipped (Units) | Int | Numeric | Machinery equipment units available. |
+| `farm_size_machines` | Farm Size (Hectares) | Float | Numeric | Farm machine size capacity. |
+| `region` | Region | Select | Standard Ethiopian Regions (e.g. `Oromia`) | Geographical region layer. |
+| `zone` | Zone | Select | Standard Ethiopian Zones (e.g. `East Shewa`) | Geographical zone layer. |
+| `woreda` | Woreda / District | Select | Standard Woredas (e.g. `Ada'ama`) | District administrative layer. |
+| `kebele` | Kebele | Data | String | Smallest local administrative unit. |
+| `aggregation_type` | Harvest Aggregation Type | Select | `Primary Cooperative`, `Nucleus Farmer` | Offtake aggregation classification. |
+| `aggregator_name` | Name of Cooperative / Nucleus Farmer | Data | String | Aggregation legal entity name. |
+
+#### **Section C: Fertilizer Requirement**
+| Field ID | Label | Field Type | Parameters / Options | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `dap_qty_kg` | DAP Quantity (Kg) | Float | Numeric | Mass of Diammonium Phosphate. |
+| `urea_qty_kg` | UREA Quantity (Kg) | Float | Numeric | Mass of Urea required. |
+| `fertilizer_unit_price` | Unit Price per Fertilizer Type | Select | Float options | Unit rates per chemical type. |
+| `total_fertilizer_cost` | Total Fertilizer Cost | Currency | Numeric | Summed cost of required soil enrichers. |
+
+#### **Section D: Crop Protection Requirement**
+| Field ID | Label | Field Type | Parameters / Options | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `agrochemical_type` | Type of Agrochemical Requested | Select | Agrochemical catalog | Crop protection chemical type. |
+| `agrochemical_qty` | Quantity Requested | Float | Numeric | Mass/Volume required. |
+| `agrochemical_price` | Unit Price | Currency | Numeric | Rate per unit of chemical. |
+| `total_crop_protection_cost` | Total Crop Protection Cost | Currency | Formula: `agrochemical_qty` * `agrochemical_price` | Total cost of pesticides/herbicides. |
+
+#### **Section E: Financing & Pricing Information**
+| Field ID | Label | Field Type | Parameters / Options | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `selected_supplier` | Selected Input Supplier | Link | `Supplier` (DocType link) | Approved DPG agritech inputs vendor. |
+| `upfront_male` | Upfront Contribution (Male Farmers %) | Float | Percentage (0-100) | Cash contribution requirement. |
+| `upfront_female` | Upfront Contribution (Female Farmers %) | Float | Percentage (0-100) | Affirmative action pricing percentage. |
+| `insurance_premium` | Crop Insurance Premium (%) | Float | Percentage (0-100) | Agricultural yield risk mitigation rate. |
+
+#### **Section F: Banking Information**
+| Field ID | Label | Field Type | Parameters / Options | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `bank_account_name` | Bank Account Name | Data | String | Legal bank account name (must match Fayda verification). |
+| `bank_account_no` | Bank Account Number | Data | String | Standard credit disbursement account. |
+| `bank_name` | Bank Name | Link | `Bank` (DocType link) | Underwriting institution. |
+| `bank_swift_ifsc` | Bank Swift/IFSC Code | Data | String | Interbank routing metadata. |
+| `mobile_account_name` | Mobile Account Name | Data | String | Mobile wallet account owner (M-Pesa/Telebirr). |
+| `mobile_payments_no` | Mobile Payments Number | Data | String | Primary mobile wallet disbursement line. |
+
+#### **Section G: Borrowing Amount & Tax ID**
+| Field ID | Label | Field Type | Parameters / Options | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `total_borrowed_amount` | Total Amount You Are Borrowing | Currency | Formula | Unified loan ledger value. |
+| `tax_id` | Tax ID | Data | 9-digit validation mask | Legal tax representation number. |
+
+---
+
 ## **4. Core API Specifications**
 
 All endpoints are built using `@frappe.whitelist()` and are versioned under the `oan_a2c.api.auth` namespace.
@@ -168,6 +264,34 @@ When the agent clicks the link in their email:
       }
     }
     ```
+
+---
+
+### **4.4 External Lead Ingestion Webhook**
+To support automated intake from external telecommunication systems (e.g., IVR or Missed Call gateways), this dedicated webhook acts as the automated funnel entry.
+
+*   **Endpoint:** `POST /api/method/oan_a2c.api.v1.webhooks.lead_inbound`
+*   **Authentication Required:** Yes (System API Key & API Secret via standard Frappe `Authorization: token <key>:<secret>` header).
+*   **Request Payload:**
+    ```json
+    {
+      "phone_number": "+251911000000",
+      "lead_source": "Missed Call",
+      "external_ref_id": "TELCO-778899",
+      "timestamp": "2026-05-19T10:00:00Z"
+    }
+    ```
+*   **Success Response (HTTP 200):**
+    ```json
+    {
+      "message": {
+        "status": "success",
+        "lead_id": "LEAD-2026-00001",
+        "message": "Lead captured successfully."
+      }
+    }
+    ```
+*   **Idempotency & Deduplication Logic:** If the external system fires multiple webhooks for the same `phone_number` and there is an existing `A2C Lead` with a status of `Open` or `Contacted`, the system will **not** create a duplicate. It will append the new `timestamp` and `external_ref_id` to the existing lead's `call_notes` and return a successful 200 OK.
 
 ---
 
