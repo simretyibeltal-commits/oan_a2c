@@ -38,51 +38,12 @@ Create an `apps.json` file with your custom apps and branches:
 
 ```json
 [
-  {
-    "url": "https://github.com/casavaventures/erpnext",
-    "branch": "release"
-  },
-  {
-    "url": "https://<YOUR_TOKEN>@github.com/casavaventures/bhm-utilities.git",
-    "branch": "release"
-  },
-  {
-    "url": "https://github.com/casavaventures/erpnext-expense-management-module.git",
-    "branch": "release"
-  },
-  {
-    "url": "https://github.com/casavaventures/hrms",
-    "branch": "release"
-  },
-  {
-    "url": "https://github.com/casavaventures/payments",
-    "branch": "release"
-  },
-  {
-    "url": "https://github.com/casavaventures/webshop",
-    "branch": "release"
-  },
-  {
-    "url": "https://<YOUR_TOKEN>@github.com/casavaventures/shopbridge.git",
-    "branch": "release"
-  },
-  {
-    "url": "https://github.com/casavaventures/india-compliance.git",
-    "branch": "release"
-  },
-  {
-    "url": "https://github.com/casavaventures/insights",
-    "branch": "release"
-  },
-  {
-    "url": "https://github.com/casavaventures/ecommerce_integrations",
-    "branch": "release"
-  },
-  {
-    "url": "https://github.com/casavaventures/frappe_whatsapp",
-    "branch": "release"
-  }
+    {
+        "url":"https://github.com/Protean-FOSS-Factory/oan_a2c.git",
+        "branch":"develop"
+    }
 ]
+
 ```
 
 **Note**: 
@@ -238,8 +199,8 @@ docker build --no-cache \
   --build-arg=FRAPPE_PATH=https://github.com/casavaventures/frappe \
   --build-arg=FRAPPE_BRANCH=version-15 \
   --build-arg=APPS_JSON_BASE64=$APPS_JSON_BASE64 \
-  --tag=erp-ventures:$BUILD_VERSION \
-  --tag=erp-ventures:latest \
+  --tag=oan_a2c:$BUILD_VERSION \
+  --tag=oan_a2c:latest \
   --file=images/layered/Containerfile .
 ```
 
@@ -250,8 +211,8 @@ docker build --no-cache `
   --build-arg=FRAPPE_PATH=https://github.com/casavaventures/frappe `
   --build-arg=FRAPPE_BRANCH=version-15 `
   --build-arg=APPS_JSON_BASE64=$APPS_JSON_BASE64 `
-  --tag=erp-ventures:$BUILD_VERSION `
-  --tag=erp-ventures:latest `
+  --tag=oan_a2c:$BUILD_VERSION `
+  --tag=oan_a2c:latest `
   --file=images/layered/Containerfile .
 ```
 
