@@ -242,8 +242,8 @@ docker images erp-ventures
 Expected output:
 ```
 REPOSITORY      TAG       IMAGE ID       CREATED         SIZE
-erp-ventures    1.0.5     abc123def456   2 minutes ago   2.5GB
-erp-ventures    latest    abc123def456   2 minutes ago   2.5GB
+oan_a2c    1.0.5     abc123def456   2 minutes ago   2.5GB
+oan_a2c    latest    abc123def456   2 minutes ago   2.5GB
 ```
 
 ---
@@ -252,7 +252,7 @@ erp-ventures    latest    abc123def456   2 minutes ago   2.5GB
 
 | Component | Branch Flexibility | Example |
 |-----------|-------------------|---------|
-| **Frappe Framework (base image)** | ❌ Must use version tags | `version-15`, `version-14` |
+| **Frappe Framework (base image)** | ❌ Must use version tags | `version-16`, `version-15` |
 | **Custom apps (in apps.json)** | ✅ Can use any branch | `release`, `develop`, `main`, `custom-branch` |
 
 ### Why This Design?
@@ -269,7 +269,7 @@ erp-ventures    latest    abc123def456   2 minutes ago   2.5GB
 
 **Problem**: Using a non-existent Docker base image tag.
 
-**Solution**: Change `FRAPPE_BRANCH=release` to `FRAPPE_BRANCH=version-15`
+**Solution**: Change `FRAPPE_BRANCH=release` to `FRAPPE_BRANCH=version-16`
 
 ### Error: "Could not find branch 'release' in repository"
 
@@ -283,12 +283,12 @@ erp-ventures    latest    abc123def456   2 minutes ago   2.5GB
 
 **Git Bash:**
 ```bash
-git ls-remote --heads https://github.com/casavaventures/frappe
+git ls-remote --heads https://github.com/frappe/frappe
 ```
 
 **PowerShell:**
 ```powershell
-git ls-remote --heads https://github.com/casavaventures/frappe
+git ls-remote --heads https://github.com/frappe/frappe
 ```
 
 ---
@@ -300,9 +300,9 @@ git ls-remote --heads https://github.com/casavaventures/frappe
 Visit: https://hub.docker.com/r/frappe/build/tags
 
 ### Common Frappe Versions
-- `version-15` - Latest stable (recommended)
-- `version-14` - Previous stable
-- `version-13` - Older stable
+- `version-16` - Latest stable (recommended)
+- `version-15` - Previous stable
+- `version-14` - Older stable
 - `develop` - Development branch (unstable)
 
 ---
@@ -346,8 +346,8 @@ docker build --no-cache \
   --build-arg=FRAPPE_PATH=https://github.com/casavaventures/frappe \
   --build-arg=FRAPPE_BRANCH=version-15 \
   --build-arg=APPS_JSON_BASE64=$APPS_JSON_BASE64 \
-  --tag=erp-ventures:$BUILD_VERSION \
-  --tag=erp-ventures:latest \
+  --tag=oan_a2c:$BUILD_VERSION \
+  --tag=oan_a2c:latest \
   --file=images/layered/Containerfile .
 
 # Step 4: Verify
@@ -399,8 +399,8 @@ docker build --no-cache `
   --build-arg=FRAPPE_PATH=https://github.com/casavaventures/frappe `
   --build-arg=FRAPPE_BRANCH=version-15 `
   --build-arg=APPS_JSON_BASE64=$APPS_JSON_BASE64 `
-  --tag=erp-ventures:$BUILD_VERSION `
-  --tag=erp-ventures:latest `
+  --tag=oan_a2c:$BUILD_VERSION `
+  --tag=oan_a2c:latest `
   --file=images/layered/Containerfile .
 
 # Step 4: Verify
@@ -464,10 +464,10 @@ docker images erp-ventures --format "table {{.Repository}}	{{.Tag}}	{{.CreatedAt
 Example output:
 ```
 REPOSITORY      TAG       CREATED AT              SIZE
-erp-ventures    1.0.3     2025-12-29 11:50:00     2.5GB
-erp-ventures    latest    2025-12-29 11:50:00     2.5GB
-erp-ventures    1.0.2     2025-12-28 15:30:00     2.5GB
-erp-ventures    1.0.1     2025-12-27 10:20:00     2.5GB
+oan_a2c         1.0.3     2025-12-29 11:50:00     2.5GB
+oan_a2c         latest    2025-12-29 11:50:00     2.5GB
+oan_a2c         1.0.2     2025-12-28 15:30:00     2.5GB
+oan_a2c         1.0.1     2025-12-27 10:20:00     2.5GB
 ```
 
 ---
@@ -481,7 +481,7 @@ docker rmi erp-ventures:1.0.1
 
 Remove all except latest:
 ```bash
-docker images erp-ventures --format "{{.Tag}}" | grep -v "latest" | xargs -I {} docker rmi erp-ventures:{}
+docker images oan_a2c --format "{{.Tag}}" | grep -v "latest" | xargs -I {} docker rmi erp-ventures:{}
 ```
 
 ---
@@ -499,7 +499,7 @@ After successful build:
 
 ## Key Takeaways
 
-✅ **FRAPPE_BRANCH** must use version tags (`version-15`)
+✅ **FRAPPE_BRANCH** must use version tags (`version-16`)
 ✅ **Apps in apps.json** can use any branch name (`release`)
 ✅ Only Frappe framework base image has this limitation
 ✅ All other apps are fetched directly from GitHub and have no restrictions
