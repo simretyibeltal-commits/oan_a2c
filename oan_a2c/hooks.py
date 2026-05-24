@@ -241,7 +241,7 @@ app_license = "mit"
 # --------------------------------
 
 auth_hooks = [
-	"oan_a2c.api.loan_app_api._validate_jwt"
+	"oan_a2c.api.middleware.validate_jwt_request"
 ]
 
 # Automatically update python controller files with type annotations for this app.
