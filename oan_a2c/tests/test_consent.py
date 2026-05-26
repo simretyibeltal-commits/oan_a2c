@@ -1,7 +1,7 @@
 import frappe
 import unittest
 from unittest.mock import patch, MagicMock
-from oan_a2c.consent.consent import create_consent_request, send_otp, verify_otp
+from oan_a2c.consent.consent import send_otp_and_create_consent, verify_otp
 import json
 
 class TestConsentAPI(unittest.TestCase):
@@ -28,54 +28,45 @@ class TestConsentAPI(unittest.TestCase):
         return result or {}
 
     @patch("oan_a2c.consent.consent.OpenG2PConsentClient")
-    def test_create_consent_request(self, MockClient):
-        # Mock the OpenG2P response
+    def test_send_otp_and_create_consent(self, MockClient):
+        # Mock the OpenG2P responses
         mock_instance = MockClient.return_value
+        
+        mock_instance.get_farmer_by_fayda_id.return_value = "DB-FARMER-001"
+        mock_instance.get_partner_id.return_value = "DB-PARTNER-001"
+        mock_instance.get_partner_allowed_data_field_ids.return_value = [1, 2]
+        
         mock_instance.create_consent_request.return_value = {
-            "consent_id": "MOCK-G2P-CONS-001"
+            "id": "MOCK-G2P-CONS-001",
+            "data": {
+                "consent_creation_request_id": "MOCK-G2P-CONS-001"
+            }
+        }
+        
+        mock_instance.send_otp.return_value = {
+            "transaction_id": "MOCK-TXN-999",
+            "masked_phone": "091****1111",
+            "success": True
         }
 
-        response = create_consent_request(
-            farmer="FAYDA-123",
+        response = send_otp_and_create_consent(
+            fayda_id="FAYDA-123",
             partner="Test Partner",
-            consent_type="specific",
             purpose="Testing Consent API",
             validity_from="2026-06-01 00:00:00",
-            validity_to="2027-06-01 00:00:00",
-            requested_data_fields=json.dumps([])
+            validity_to="2027-06-01 00:00:00"
         )
         
         self.assertEqual(response.get("status"), "success")
         self.assertEqual(response.get("openg2p_consent_id"), "MOCK-G2P-CONS-001")
+        self.assertEqual(response.get("transaction_id"), "MOCK-TXN-999")
         
         # Verify document was created using direct DB query (no child-table load)
         consent_name = response.get("consent_request")
-        vals = self._get_consent_values(consent_name, "farmer", "status", "openg2p_consent_id")
-        self.assertEqual(vals.get("farmer"), "FAYDA-123")
-        self.assertEqual(vals.get("status"), "Draft")
-        self.assertEqual(vals.get("openg2p_consent_id"), "MOCK-G2P-CONS-001")
-        
-        return consent_name
-
-    @patch("oan_a2c.consent.consent.OpenG2PConsentClient")
-    def test_send_otp(self, MockClient):
-        # First create a doc
-        consent_name = self.test_create_consent_request()
-        
-        mock_instance = MockClient.return_value
-        mock_instance.send_otp.return_value = {
-            "transaction_id": "MOCK-TXN-999",
-            "masked_phone": "091****1111"
-        }
-        
-        response = send_otp(consent_request=consent_name)
-        
-        self.assertEqual(response.get("status"), "success")
-        self.assertEqual(response.get("transaction_id"), "MOCK-TXN-999")
-        
-        # Verify via direct DB query to avoid child-table loading
-        vals = self._get_consent_values(consent_name, "status", "otp_transaction_id")
+        vals = self._get_consent_values(consent_name, "farmer_fayda_id", "status", "openg2p_consent_id", "otp_transaction_id")
+        self.assertEqual(vals.get("farmer_fayda_id"), "FAYDA-123")
         self.assertEqual(vals.get("status"), "Pending OTP")
+        self.assertEqual(vals.get("openg2p_consent_id"), "MOCK-G2P-CONS-001")
         self.assertEqual(vals.get("otp_transaction_id"), "MOCK-TXN-999")
         
         return consent_name
@@ -84,9 +75,10 @@ class TestConsentAPI(unittest.TestCase):
     @patch("oan_a2c.consent.consent.OpenG2PConsentClient")
     def test_verify_otp(self, MockClient, MockEnqueue):
         # Create doc and send OTP first
-        consent_name = self.test_send_otp()
+        consent_name = self.test_send_otp_and_create_consent()
         
         mock_instance = MockClient.return_value
+        mock_instance.get_farmer_by_fayda_id.return_value = "DB-FARMER-001"
         mock_instance.verify_otp.return_value = {
             "status": "success"
         }

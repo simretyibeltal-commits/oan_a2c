@@ -4,8 +4,10 @@ from oan_a2c.api.loan_app_api import (
     loan_details,
     bank_details,
     farmer_details,
-    application_manager
+    application_manager,
+    get_consent_data
 )
+import json
 
 class TestLoanAPI(unittest.TestCase):
     @classmethod
@@ -124,12 +126,60 @@ class TestLoanAPI(unittest.TestCase):
         # status should not be changed by generic draft endpoint
         self.assertEqual(doc.status, "Draft")
 
-    def test_6_submit_missing_consent(self):
-        """Test that submitting an application without consent fails"""
+    def test_6_get_consent_data_missing(self):
+        """Test getting consent data when none is available"""
         app_id = getattr(self, "app_id", None)
         if not app_id:
             res = loan_details(action="save", purpose_of_loan="API_TEST")
             app_id = res["data"]["application_id"]
+            
+        response = get_consent_data(application_id=app_id)
+        self.assertEqual(response["status"], "error")
+        self.assertEqual(response["error_code"], "NO_CONSENT_DATA")
+
+    def test_7_get_consent_data_success(self):
+        """Test parsing consent data"""
+        app_id = getattr(self, "app_id", None)
+        if not app_id:
+            res = loan_details(action="save", purpose_of_loan="API_TEST")
+            app_id = res["data"]["application_id"]
+            
+        # Simulate webhook having updated consent data
+        sample_consent = {
+            "consent": {
+                "consent_creation_request_id": "REQ-123"
+            },
+            "farmer": {
+                "id": "F-001",
+                "name": "Jane Doe Basic"
+            },
+            "selected_data": {
+                "farmer": {
+                    "given_name": "Jane",
+                    "family_name": "Doe",
+                    "email": "jane@example.com",
+                    "phone_no": ["123456789"]
+                }
+            }
+        }
+        
+        frappe.db.set_value("Loan Application", app_id, "consent_data", json.dumps(sample_consent))
+        frappe.db.set_value("Loan Application", app_id, "consent_status", "Approved")
+        frappe.db.commit()
+        
+        response = get_consent_data(application_id=app_id)
+        self.assertEqual(response["status"], "success")
+        
+        details = response["data"]["farmer_details"]
+        self.assertEqual(details["full_name"], "Jane Doe Basic")
+        self.assertEqual(details["email"], "jane@example.com")
+        self.assertEqual(details["mobile_phone"], "123456789")
+
+    def test_8_submit_missing_consent(self):
+        """Test that submitting an application without consent fails"""
+        # Create a new app that doesn't have consent_status="Approved"
+        res = loan_details(action="save", purpose_of_loan="API_TEST")
+        app_id = res["data"]["application_id"]
 
         response = application_manager(
             action="submit",
@@ -139,7 +189,7 @@ class TestLoanAPI(unittest.TestCase):
         self.assertEqual(response["status"], "error")
         self.assertEqual(response["error_code"], "CONSENT_NOT_APPROVED")
 
-    def test_7_cancel_application(self):
+    def test_9_cancel_application(self):
         """Test cancelling the application"""
         res = loan_details(action="save", purpose_of_loan="API_TEST")
         app_id = res["data"]["application_id"]
@@ -155,7 +205,7 @@ class TestLoanAPI(unittest.TestCase):
         self.assertEqual(doc.status, "Cancelled")
         self.assertEqual(doc.cancellation_reason, "User requested cancellation")
 
-    def test_8_submit_success(self):
+    def test_10_submit_success(self):
         """Test submitting an application when consent is Approved and documents are uploaded"""
         res = loan_details(action="save", purpose_of_loan="API_TEST")
         app_id = res["data"]["application_id"]
