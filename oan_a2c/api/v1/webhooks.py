@@ -3,7 +3,7 @@ from frappe import _
 
 
 @frappe.whitelist(allow_guest=False)
-def lead_inbound(phone_number, lead_source="Missed Call", external_ref_id=None, timestamp=None):
+def lead_inbound(phone_number=None, lead_source="Missed Call", external_ref_id=None, timestamp=None):
 	"""
 	Automated lead intake from external telco systems (IVR / missed call gateways).
 

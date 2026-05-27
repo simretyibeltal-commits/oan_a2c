@@ -105,7 +105,7 @@ def get_leads(
 
 
 @frappe.whitelist(allow_guest=False)
-def create_lead(phone_number, first_name=None, last_name=None, email=None, lead_source="Agent Entry", external_id=None):
+def create_lead(phone_number=None, first_name=None, last_name=None, email=None, lead_source="Agent Entry", external_id=None):
 	"""
 	Natively creates a new A2C Lead document from the A2C application interface.
 	
