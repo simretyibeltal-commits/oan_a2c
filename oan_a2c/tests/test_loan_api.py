@@ -234,3 +234,44 @@ class TestLoanAPI(unittest.TestCase):
         doc = frappe.get_doc("Loan Application", app_id)
         self.assertEqual(doc.status, "Submitted")
         self.assertEqual(doc.current_step, 6)
+
+    def test_11_get_loan_applications(self):
+        """Test the loan applications list API"""
+        from oan_a2c.openagrinet_access_to_credit.doctype.loan_application.loan_application import get_loan_applications
+
+        # Create a dummy test record
+        doc = frappe.get_doc({
+            "doctype": "Loan Application",
+            "status": "Draft",
+            "loan_type": "Test Dashboard Loan",
+            "requested_amount": 1000
+        }).insert(ignore_permissions=True)
+
+        res = get_loan_applications(page=1, page_size=20)
+        self.assertEqual(res.get("status"), "success")
+        self.assertIn("results", res)
+        self.assertIn("pagination", res)
+        self.assertTrue(res["pagination"]["total"] > 0)
+        
+        # Cleanup
+        doc.delete()
+
+    def test_12_get_loan_summary(self):
+        """Test the loan summary API"""
+        from oan_a2c.openagrinet_access_to_credit.doctype.loan_application.loan_application import get_loan_summary
+
+        # Create a dummy test record
+        doc = frappe.get_doc({
+            "doctype": "Loan Application",
+            "status": "Draft",
+            "loan_type": "Test Dashboard Loan",
+            "requested_amount": 1000
+        }).insert(ignore_permissions=True)
+
+        res = get_loan_summary()
+        self.assertEqual(res.get("status"), "success")
+        self.assertIn("total", res)
+        self.assertIn("by_status", res)
+        
+        # Cleanup
+        doc.delete()

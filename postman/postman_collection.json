@@ -368,6 +368,395 @@
                     }
                 }
             ]
+        },
+        {
+            "name": "Loan Application Management",
+            "item": [
+                {
+                    "name": "1. Loan Details",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{jwt_token}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"action\": \"save\",\n    \"loan_type\": \"Agricultural Loan\",\n    \"purpose_of_loan\": \"Postman Test\",\n    \"requested_loan_amount\": 75000,\n    \"primary_crop\": \"Wheat\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/method/oan_a2c.api.loan_app_api.loan_details",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "method",
+                                "oan_a2c.api.loan_app_api.loan_details"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "2. Bank Details",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{jwt_token}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"action\": \"save\",\n    \"application_id\": \"{{application_id}}\",\n    \"bank_account_name\": \"Jane Doe\",\n    \"bank_account_number\": \"9876543210\",\n    \"bank_name\": \"Cooperative Bank of Oromia\",\n    \"total_amount_borrowing\": 75000\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/method/oan_a2c.api.loan_app_api.bank_details",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "method",
+                                "oan_a2c.api.loan_app_api.bank_details"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "3. Supporting Documents - Upload",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{jwt_token}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "action",
+                                    "value": "upload",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "application_id",
+                                    "value": "{{application_id}}",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "document_type",
+                                    "value": "Identity Document",
+                                    "type": "text"
+                                },
+                                {
+                                    "key": "file",
+                                    "type": "file",
+                                    "src": []
+                                }
+                            ]
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/method/oan_a2c.api.loan_app_api.supporting_documents",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "method",
+                                "oan_a2c.api.loan_app_api.supporting_documents"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "4. Supporting Documents - List",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{jwt_token}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"action\": \"list\",\n    \"application_id\": \"{{application_id}}\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/method/oan_a2c.api.loan_app_api.supporting_documents",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "method",
+                                "oan_a2c.api.loan_app_api.supporting_documents"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "5. Farmer Details",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{jwt_token}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"action\": \"save\",\n    \"application_id\": \"{{application_id}}\",\n    \"full_name\": \"John\",\n    \"last_name\": \"Doe\",\n    \"mobile_phone\": \"0911223344\",\n    \"gender\": \"Male\",\n    \"woreda\": \"Woreda A\",\n    \"kebele\": \"Kebele B\",\n    \"marital_status\": \"Married\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/method/oan_a2c.api.loan_app_api.farmer_details",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "method",
+                                "oan_a2c.api.loan_app_api.farmer_details"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "6. Get Consent Data",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{jwt_token}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"application_id\": \"{{application_id}}\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/method/oan_a2c.api.loan_app_api.get_consent_data",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "method",
+                                "oan_a2c.api.loan_app_api.get_consent_data"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "7. Application Manager - Review",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{jwt_token}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"action\": \"review\",\n    \"application_id\": \"{{application_id}}\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/method/oan_a2c.api.loan_app_api.application_manager",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "method",
+                                "oan_a2c.api.loan_app_api.application_manager"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "8. Application Manager - Submit",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{jwt_token}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n    \"action\": \"submit\",\n    \"application_id\": \"{{application_id}}\"\n}"
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/method/oan_a2c.api.loan_app_api.application_manager",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "method",
+                                "oan_a2c.api.loan_app_api.application_manager"
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "9. Get Loan Applications",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{jwt_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/method/oan_a2c.openagrinet_access_to_credit.doctype.loan_application.loan_application.get_loan_applications?page=1&page_size=20",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "method",
+                                "oan_a2c",
+                                "openagrinet_access_to_credit",
+                                "doctype",
+                                "loan_application",
+                                "loan_application",
+                                "get_loan_applications"
+                            ],
+                            "query": [
+                                {
+                                    "key": "page",
+                                    "value": "1"
+                                },
+                                {
+                                    "key": "page_size",
+                                    "value": "20"
+                                },
+                                {
+                                    "key": "status",
+                                    "value": "[\"Draft\", \"Approved\"]",
+                                    "disabled": true
+                                },
+                                {
+                                    "key": "loan_amount_min",
+                                    "value": "10000",
+                                    "disabled": true
+                                },
+                                {
+                                    "key": "loan_amount_max",
+                                    "value": "150000",
+                                    "disabled": true
+                                },
+                                {
+                                    "key": "loan_type",
+                                    "value": "Agricultural Loan",
+                                    "disabled": true
+                                },
+                                {
+                                    "key": "mobile_phone",
+                                    "value": "555",
+                                    "disabled": true
+                                },
+                                {
+                                    "key": "from_date",
+                                    "value": "2026-10-01",
+                                    "disabled": true
+                                },
+                                {
+                                    "key": "to_date",
+                                    "value": "2026-10-31",
+                                    "disabled": true
+                                }
+                            ]
+                        }
+                    },
+                    "response": []
+                },
+                {
+                    "name": "10. Get Loan Summary",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{jwt_token}}"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/method/oan_a2c.openagrinet_access_to_credit.doctype.loan_application.loan_application.get_loan_summary",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "method",
+                                "oan_a2c",
+                                "openagrinet_access_to_credit",
+                                "doctype",
+                                "loan_application",
+                                "loan_application",
+                                "get_loan_summary"
+                            ]
+                        }
+                    },
+                    "response": []
+                }
+            ]
         }
     ],
     "variable": [
