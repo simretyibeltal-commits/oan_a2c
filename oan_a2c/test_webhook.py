@@ -36,12 +36,14 @@ payload = {
   }
 }
 
-response = requests.post(
-    f"{FRAPPE_URL}/api/method/oan_a2c.api.webhook_api.receive_consent_data",
-    json=payload,
-    headers={"Content-Type": "application/json"},
-    timeout=30
-)
+if __name__ == "__main__":
+	response = requests.post(
+		f"{FRAPPE_URL}/api/method/oan_a2c.api.webhook_api.receive_consent_data",
+		json=payload,
+		headers={"Content-Type": "application/json"},
+		timeout=30
+	)
 
-print(f"Status Code: {response.status_code}")
-print(f"Response: {response.text}")
+	print(f"Status Code: {response.status_code}")
+	print(f"Response: {response.text}")
+

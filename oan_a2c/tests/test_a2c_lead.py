@@ -45,24 +45,24 @@ class TestA2CLead(unittest.TestCase):
 		lead = frappe.new_doc("A2C Lead")
 		lead.phone_number = self.TEST_PHONE
 		lead.lead_source = "Missed Call"
-		lead.status = "Open"
+		lead.status = "Active"
 		lead.insert()
 
 		self.assertTrue(lead.name.startswith("LEAD-"))
-		self.assertEqual(lead.status, "Open")
+		self.assertEqual(lead.status, "Active")
 
 	def test_2_duplicate_active_lead_blocked(self):
 		"""Two active leads for the same phone number must be rejected."""
 		lead = frappe.new_doc("A2C Lead")
 		lead.phone_number = self.TEST_PHONE
 		lead.lead_source = "Missed Call"
-		lead.status = "Open"
+		lead.status = "Active"
 		lead.insert()
 
 		duplicate = frappe.new_doc("A2C Lead")
 		duplicate.phone_number = self.TEST_PHONE
 		duplicate.lead_source = "IVR"
-		duplicate.status = "Open"
+		duplicate.status = "Active"
 
 		with self.assertRaises(frappe.DuplicateEntryError):
 			duplicate.insert()
@@ -78,7 +78,7 @@ class TestA2CLead(unittest.TestCase):
 		new_lead = frappe.new_doc("A2C Lead")
 		new_lead.phone_number = self.TEST_PHONE
 		new_lead.lead_source = "Agent Entry"
-		new_lead.status = "Open"
+		new_lead.status = "Active"
 		new_lead.insert()
 
 		self.assertTrue(new_lead.name.startswith("LEAD-"))
@@ -101,7 +101,7 @@ class TestA2CLead(unittest.TestCase):
 
 		lead = frappe.get_doc("A2C Lead", response["lead_id"])
 		self.assertEqual(lead.phone_number, self.TEST_PHONE)
-		self.assertEqual(lead.status, "Open")
+		self.assertEqual(lead.status, "Active")
 		self.assertIn("TELCO-001", lead.call_notes)
 
 	def test_5_webhook_idempotent_on_duplicate_call(self):
@@ -205,19 +205,19 @@ class TestLeadListAPI(unittest.TestCase):
 				"phone_number": "+251922000001",
 				"external_id": "TEL-LIST-001",
 				"lead_source": "Missed Call",
-				"status": "Open",
+				"status": "Active",
 			},
 			{
 				"phone_number": "+251922000002",
 				"external_id": "TEL-LIST-002",
 				"lead_source": "IVR",
-				"status": "Initiated",
+				"status": "Verified",
 			},
 			{
 				"phone_number": "+251922000003",
 				"external_id": "TEL-LIST-003",
 				"lead_source": "SMS",
-				"status": "Qualified",
+				"status": "Granted",
 			},
 			{
 				"phone_number": "+251922000004",
@@ -294,10 +294,10 @@ class TestLeadListAPI(unittest.TestCase):
 		"""Verifies applying status and lead_source filters works."""
 		from oan_a2c.api.v1.leads import get_leads
 		
-		# Filter by Qualified status (new status)
-		res_status = get_leads(status="Qualified", search_query="+251922000")
+		# Filter by Granted status (new status)
+		res_status = get_leads(status="Granted", search_query="+251922000")
 		self.assertEqual(res_status["total_count"], 1)
-		self.assertEqual(res_status["results"][0]["status"], "Qualified")
+		self.assertEqual(res_status["results"][0]["status"], "Granted")
 
 		# Filter by Lead Source
 		res_source = get_leads(lead_source="Missed Call", search_query="+251922000")
@@ -314,10 +314,10 @@ class TestLeadListAPI(unittest.TestCase):
 		self.assertEqual(res["total"], 5)
 		
 		by_status = res["by_status"]
-		self.assertEqual(by_status["Open"], 1)
-		self.assertEqual(by_status["Initiated"], 1)
-		self.assertEqual(by_status["Qualified"], 1)
-		self.assertEqual(by_status["Not Interested"], 0)
+		self.assertEqual(by_status["Active"], 1)
+		self.assertEqual(by_status["Verified"], 1)
+		self.assertEqual(by_status["Granted"], 1)
+		self.assertEqual(by_status["Rejected"], 0)
 		self.assertEqual(by_status["Processed"], 2)
 
 	def test_get_lead_metadata(self):
@@ -325,8 +325,8 @@ class TestLeadListAPI(unittest.TestCase):
 		from oan_a2c.api.v1.leads import get_lead_metadata
 		res = get_lead_metadata()
 		self.assertEqual(res["status"], "success")
-		self.assertIn("Open", res["statuses"])
-		self.assertIn("Initiated", res["statuses"])
+		self.assertIn("Active", res["statuses"])
+		self.assertIn("Verified", res["statuses"])
 		self.assertIn("Missed Call", res["sources"])
 		self.assertIn("Agent Entry", res["sources"])
 
@@ -466,3 +466,335 @@ class TestLeadCreationAPI(unittest.TestCase):
 				first_name="Second",
 				last_name="Last"
 			)
+
+
+class TestVisitScheduleAPI(unittest.TestCase):
+	"""Tests for A2C Lead Visit Scheduling REST API endpoints."""
+
+	@classmethod
+	def setUpClass(cls):
+		frappe.set_user("Administrator")
+		cls._clear_records()
+
+		# Insert a test lead to schedule visits for
+		cls.lead = frappe.new_doc("A2C Lead")
+		cls.lead.phone_number = "+251955000001"
+		cls.lead.lead_source = "Agent Entry"
+		cls.lead.status = "Active"
+		cls.lead.insert(ignore_permissions=True)
+		cls.lead_id = cls.lead.name
+		frappe.db.commit()
+
+	@classmethod
+	def tearDownClass(cls):
+		frappe.set_user("Administrator")
+		cls._clear_records()
+		frappe.db.commit()
+
+	@classmethod
+	def _clear_records(cls):
+		# Delete all visit schedules
+		for name in frappe.get_all("A2C Visit Schedule", pluck="name"):
+			frappe.delete_doc("A2C Visit Schedule", name, ignore_permissions=True, force=True)
+		# Delete our specific testing lead
+		for name in frappe.get_all("A2C Lead", filters={"phone_number": "+251955000001"}, pluck="name"):
+			frappe.delete_doc("A2C Lead", name, ignore_permissions=True, force=True)
+
+	def setUp(self):
+		frappe.set_user("Administrator")
+		# Reset lead status to Open
+		frappe.db.set_value("A2C Lead", self.lead_id, "status", "Active")
+		# Delete all schedules before each test
+		for name in frappe.get_all("A2C Visit Schedule", pluck="name"):
+			frappe.delete_doc("A2C Visit Schedule", name, ignore_permissions=True, force=True)
+		frappe.db.commit()
+
+	def test_schedule_visit_success(self):
+		"""Verifies that schedule_visit successfully creates a visit schedule, promotes lead status, and logs timeline."""
+		from oan_a2c.api.v1.leads import schedule_visit
+		
+		res = schedule_visit(
+			lead_id=self.lead_id,
+			visit_date="2026-06-10",
+			visit_time="14:30:00",
+			region="Oromia",
+			zone="East Shewa",
+			woreda="Ada'ama",
+			kebele="Kebele 02",
+			meeting_location="Cooperative Office",
+			notes="Bring farm certificates"
+		)
+
+		self.assertEqual(res["status"], "success")
+		self.assertTrue(res["schedule_id"])
+
+		# Verify DB record values
+		schedule = frappe.get_doc("A2C Visit Schedule", res["schedule_id"])
+		self.assertEqual(schedule.lead, self.lead_id)
+		self.assertEqual(str(schedule.visit_date), "2026-06-10")
+		self.assertEqual(schedule.region, "Oromia")
+		self.assertEqual(schedule.zone, "East Shewa")
+		self.assertEqual(schedule.woreda, "Ada'ama")
+		self.assertEqual(schedule.kebele, "Kebele 02")
+		self.assertEqual(schedule.status, "Scheduled")
+
+		# Verify Lead status was promoted to Initiated
+		lead_status = frappe.db.get_value("A2C Lead", self.lead_id, "status")
+		self.assertEqual(lead_status, "Verified")
+
+		# Verify system timeline comment is created
+		comments = frappe.get_all(
+			"Comment",
+			filters={"reference_doctype": "A2C Lead", "reference_name": self.lead_id},
+			fields=["content"]
+		)
+		self.assertTrue(any("Visit scheduled for 2026-06-10" in c["content"] for c in comments))
+
+	def test_get_visit_schedules_filtering(self):
+		"""Verifies filtering and pagination of get_visit_schedules API."""
+		from oan_a2c.api.v1.leads import schedule_visit, get_visit_schedules
+
+		# Create two schedules
+		schedule_visit(
+			lead_id=self.lead_id,
+			visit_date="2026-06-10",
+			visit_time="10:00:00",
+			region="Oromia",
+			zone="East Shewa",
+			woreda="Ada'ama",
+			kebele="01"
+		)
+		schedule_visit(
+			lead_id=self.lead_id,
+			visit_date="2026-06-11",
+			visit_time="15:00:00",
+			region="Oromia",
+			zone="East Shewa",
+			woreda="Ada'ama",
+			kebele="02"
+		)
+
+		# Fetch all schedules
+		res = get_visit_schedules(lead_id=self.lead_id)
+		self.assertEqual(res["status"], "success")
+		self.assertEqual(res["total_count"], 2)
+		self.assertEqual(len(res["results"]), 2)
+
+		# Fetch with date filter
+		res_filtered = get_visit_schedules(lead_id=self.lead_id, start_date="2026-06-11")
+		self.assertEqual(res_filtered["total_count"], 1)
+		self.assertEqual(str(res_filtered["results"][0]["visit_date"]), "2026-06-11")
+
+
+class TestLeadStatusUpdateAPI(unittest.TestCase):
+	"""Tests for A2C Lead status updates and transition locking API endpoint."""
+
+	@classmethod
+	def setUpClass(cls):
+		frappe.set_user("Administrator")
+		cls._clear_records()
+
+		# Insert a test lead for updating statuses
+		cls.lead = frappe.new_doc("A2C Lead")
+		cls.lead.phone_number = "+251966000001"
+		cls.lead.lead_source = "Agent Entry"
+		cls.lead.status = "Active"
+		cls.lead.insert(ignore_permissions=True)
+		cls.lead_id = cls.lead.name
+		frappe.db.commit()
+
+	@classmethod
+	def tearDownClass(cls):
+		frappe.set_user("Administrator")
+		cls._clear_records()
+		frappe.db.commit()
+
+	@classmethod
+	def _clear_records(cls):
+		for name in frappe.get_all("A2C Lead", filters={"phone_number": "+251966000001"}, pluck="name"):
+			frappe.delete_doc("A2C Lead", name, ignore_permissions=True, force=True)
+
+	def setUp(self):
+		frappe.set_user("Administrator")
+		frappe.db.set_value("A2C Lead", self.lead_id, "status", "Active")
+		# Delete comments for this lead before each test
+		comments = frappe.get_all("Comment", filters={"reference_doctype": "A2C Lead", "reference_name": self.lead_id}, pluck="name")
+		for comment in comments:
+			frappe.delete_doc("Comment", comment, ignore_permissions=True, force=True)
+		frappe.db.commit()
+
+	def test_1_update_status_success(self):
+		"""Verifies that update_lead_status successfully updates status and records the reason as a timeline comment."""
+		from oan_a2c.api.v1.leads import update_lead_status
+
+		res = update_lead_status(
+			lead_id=self.lead_id,
+			status="Verified",
+			reason="Conducted discovery call and verified information."
+		)
+
+		self.assertEqual(res["status"], "success")
+		self.assertEqual(res["new_status"], "Verified")
+
+		# Check DB
+		current_status = frappe.db.get_value("A2C Lead", self.lead_id, "status")
+		self.assertEqual(current_status, "Verified")
+
+		# Check timeline comment
+		comments = frappe.get_all(
+			"Comment",
+			filters={"reference_doctype": "A2C Lead", "reference_name": self.lead_id},
+			fields=["content"]
+		)
+		self.assertEqual(len(comments), 1)
+		self.assertIn("Status updated to Verified", comments[0]["content"])
+		self.assertIn("Conducted discovery call and verified information.", comments[0]["content"])
+		self.assertIn("Administrator", comments[0]["content"])
+
+	def test_2_invalid_status_name_throws(self):
+		"""Verifies update_lead_status rejects target statuses not defined in the Select choices."""
+		from oan_a2c.api.v1.leads import update_lead_status
+
+		with self.assertRaises(frappe.ValidationError):
+			update_lead_status(
+				lead_id=self.lead_id,
+				status="InvalidOutcomeStatusName"
+			)
+
+	def test_3_update_status_locked_when_terminal(self):
+		"""Verifies update_lead_status blocks modifications when a lead is in a locked/terminal state."""
+		from oan_a2c.api.v1.leads import update_lead_status
+
+		# 1. Promote to Processed (Terminal)
+		update_lead_status(
+			lead_id=self.lead_id,
+			status="Processed",
+			reason="Processing lead to loan application."
+		)
+
+		# 2. Attempting to change status again must raise a ValidationError
+		with self.assertRaises(frappe.ValidationError):
+			update_lead_status(
+				lead_id=self.lead_id,
+				status="Active",
+				reason="Try to make it active again"
+			)
+
+
+class TestLeadAssignmentAPI(unittest.TestCase):
+	"""Tests for Lead Assignment, Date stamp, and User search lookup APIs."""
+
+	@classmethod
+	def setUpClass(cls):
+		frappe.set_user("Administrator")
+		cls._clear_records()
+
+		# Create a test Lead for assignment
+		cls.lead = frappe.new_doc("A2C Lead")
+		cls.lead.phone_number = "+251966000002"
+		cls.lead.lead_source = "Agent Entry"
+		cls.lead.status = "Active"
+		cls.lead.insert(ignore_permissions=True)
+		cls.lead_id = cls.lead.name
+		frappe.db.commit()
+
+	@classmethod
+	def tearDownClass(cls):
+		frappe.set_user("Administrator")
+		cls._clear_records()
+		frappe.db.commit()
+
+	@classmethod
+	def _clear_records(cls):
+		for name in frappe.get_all("A2C Lead", filters={"phone_number": "+251966000002"}, pluck="name"):
+			frappe.delete_doc("A2C Lead", name, ignore_permissions=True, force=True)
+
+	def setUp(self):
+		frappe.set_user("Administrator")
+		frappe.db.set_value("A2C Lead", self.lead_id, "assigned_to", None)
+		frappe.db.set_value("A2C Lead", self.lead_id, "assigned_date", None)
+		# Delete comments for this lead before each test
+		comments = frappe.get_all("Comment", filters={"reference_doctype": "A2C Lead", "reference_name": self.lead_id}, pluck="name")
+		for comment in comments:
+			frappe.delete_doc("Comment", comment, ignore_permissions=True, force=True)
+		frappe.db.commit()
+
+	def test_1_get_assignable_users(self):
+		"""Verifies that get_assignable_users returns users with appropriate roles."""
+		# Verify that we can run the query and check formatting keys are present
+		res = get_assignable_users()
+		self.assertEqual(res["status"], "success")
+		self.assertTrue(isinstance(res["results"], list))
+
+		# Create a dummy user with a role if none exists to ensure tests pass in clean environments
+		if not res["results"]:
+			# Ensure Development Agent role exists
+			if not frappe.db.exists("Role", "Development Agent"):
+				role = frappe.new_doc("Role")
+				role.role_name = "Development Agent"
+				role.insert(ignore_permissions=True)
+
+			dummy_username = "test_agent_assignee"
+			dummy_email = "test_agent_assignee@coopbank.com"
+			if not frappe.db.exists("User", dummy_email):
+				user = frappe.new_doc("User")
+				user.email = dummy_email
+				user.first_name = "Test Assignee Agent"
+				user.username = dummy_username
+				user.location = "Oromia"
+				user.insert(ignore_permissions=True)
+				user.add_roles("Development Agent")
+				frappe.db.commit()
+
+			res = get_assignable_users()
+			self.assertTrue(len(res["results"]) >= 1)
+
+		first_user = res["results"][0]
+		self.assertTrue("email" in first_user)
+		self.assertTrue("full_name" in first_user)
+		self.assertTrue("agent_id" in first_user)
+		self.assertTrue("region" in first_user)
+
+	def test_2_assign_lead_success(self):
+		"""Verifies that lead assignment updates properties and creates timeline logs."""
+		from oan_a2c.api.v1.leads import assign_lead, get_leads
+		from frappe.utils import today
+
+		res = assign_lead(
+			lead_id=self.lead_id,
+			assigned_to="Administrator"
+		)
+
+		self.assertEqual(res["status"], "success")
+		self.assertEqual(res["assigned_to"], "Administrator")
+		self.assertEqual(res["assigned_date"], today())
+
+		# Check DB
+		lead = frappe.get_doc("A2C Lead", self.lead_id)
+		self.assertEqual(lead.assigned_to, "Administrator")
+		self.assertEqual(str(lead.assigned_date), today())
+
+		# Check comment timeline log
+		comments = frappe.get_all(
+			"Comment",
+			filters={"reference_doctype": "A2C Lead", "reference_name": self.lead_id},
+			fields=["content"]
+		)
+		self.assertTrue(any("Lead assigned to" in c["content"] for c in comments))
+
+		# Check that get_leads returns the assigned_date field
+		list_res = get_leads(search_query=self.lead_id)
+		self.assertEqual(list_res["total_count"], 1)
+		self.assertEqual(str(list_res["results"][0]["assigned_date"]), today())
+
+	def test_3_assign_lead_nonexistent_user_throws(self):
+		"""Verifies assign_lead blocks assignment to nonexistent user."""
+		from oan_a2c.api.v1.leads import assign_lead
+		with self.assertRaises(frappe.DoesNotExistError):
+			assign_lead(
+				lead_id=self.lead_id,
+				assigned_to="nonexistent_email_123@coopbank.com"
+			)
+
+
+
