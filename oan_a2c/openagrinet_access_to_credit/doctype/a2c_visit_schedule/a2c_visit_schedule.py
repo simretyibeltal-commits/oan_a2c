@@ -1,6 +1,5 @@
 import frappe
 from frappe.model.document import Document
 
-
-class ConsentDataField(Document):
-    pass
+class A2CVisitSchedule(Document):
+	pass
