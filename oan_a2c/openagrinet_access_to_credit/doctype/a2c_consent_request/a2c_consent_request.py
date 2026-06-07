@@ -2,5 +2,5 @@ import frappe
 from frappe.model.document import Document
 
 
-class ConsentRequest(Document):
+class A2CConsentRequest(Document):
     pass

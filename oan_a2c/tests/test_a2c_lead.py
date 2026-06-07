@@ -349,7 +349,7 @@ class TestLeadListAPI(unittest.TestCase):
 		
 		found_comment = next((c for c in res_timeline["timeline"] if c["name"] == res_add["comment_id"]), None)
 		self.assertIsNotNone(found_comment)
-		self.assertEqual(found_comment["content"], "Test comment from field officer.")
+		self.assertEqual(found_comment["event_description"], "Test comment from field officer.")
 
 	def test_get_lead_call_logs(self):
 		"""Verifies that call notes are correctly retrieved and parsed into structured call logs."""
@@ -544,11 +544,11 @@ class TestVisitScheduleAPI(unittest.TestCase):
 
 		# Verify system timeline comment is created
 		comments = frappe.get_all(
-			"Comment",
-			filters={"reference_doctype": "A2C Lead", "reference_name": self.lead_id},
-			fields=["content"]
+			"A2C Lead Audit Event",
+			filters={"lead": self.lead_id},
+			fields=["event_description"]
 		)
-		self.assertTrue(any("Visit scheduled for 2026-06-10" in c["content"] for c in comments))
+		self.assertTrue(any("Visit scheduled for 2026-06-10" in c["event_description"] for c in comments))
 
 	def test_get_visit_schedules_filtering(self):
 		"""Verifies filtering and pagination of get_visit_schedules API."""
@@ -618,9 +618,9 @@ class TestLeadStatusUpdateAPI(unittest.TestCase):
 		frappe.set_user("Administrator")
 		frappe.db.set_value("A2C Lead", self.lead_id, "status", "Active")
 		# Delete comments for this lead before each test
-		comments = frappe.get_all("Comment", filters={"reference_doctype": "A2C Lead", "reference_name": self.lead_id}, pluck="name")
+		comments = frappe.get_all("A2C Lead Audit Event", filters={"lead": self.lead_id}, pluck="name")
 		for comment in comments:
-			frappe.delete_doc("Comment", comment, ignore_permissions=True, force=True)
+			frappe.delete_doc("A2C Lead Audit Event", comment, ignore_permissions=True, force=True)
 		frappe.db.commit()
 
 	def test_1_update_status_success(self):
@@ -642,14 +642,14 @@ class TestLeadStatusUpdateAPI(unittest.TestCase):
 
 		# Check timeline comment
 		comments = frappe.get_all(
-			"Comment",
-			filters={"reference_doctype": "A2C Lead", "reference_name": self.lead_id},
-			fields=["content"]
+			"A2C Lead Audit Event",
+			filters={"lead": self.lead_id},
+			fields=["event_description"]
 		)
 		self.assertEqual(len(comments), 1)
-		self.assertIn("Status updated to Verified", comments[0]["content"])
-		self.assertIn("Conducted discovery call and verified information.", comments[0]["content"])
-		self.assertIn("Administrator", comments[0]["content"])
+		self.assertIn("Changed to Verified", comments[0]["event_description"])
+		self.assertIn("Conducted discovery call and verified information.", comments[0]["event_description"])
+		self.assertIn("Administrator", comments[0]["event_description"])
 
 	def test_2_invalid_status_name_throws(self):
 		"""Verifies update_lead_status rejects target statuses not defined in the Select choices."""
@@ -714,13 +714,14 @@ class TestLeadAssignmentAPI(unittest.TestCase):
 		frappe.db.set_value("A2C Lead", self.lead_id, "assigned_to", None)
 		frappe.db.set_value("A2C Lead", self.lead_id, "assigned_date", None)
 		# Delete comments for this lead before each test
-		comments = frappe.get_all("Comment", filters={"reference_doctype": "A2C Lead", "reference_name": self.lead_id}, pluck="name")
+		comments = frappe.get_all("A2C Lead Audit Event", filters={"lead": self.lead_id}, pluck="name")
 		for comment in comments:
-			frappe.delete_doc("Comment", comment, ignore_permissions=True, force=True)
+			frappe.delete_doc("A2C Lead Audit Event", comment, ignore_permissions=True, force=True)
 		frappe.db.commit()
 
 	def test_1_get_assignable_users(self):
 		"""Verifies that get_assignable_users returns users with appropriate roles."""
+		from oan_a2c.api.v1.leads import get_assignable_users
 		# Verify that we can run the query and check formatting keys are present
 		res = get_assignable_users()
 		self.assertEqual(res["status"], "success")
@@ -776,11 +777,11 @@ class TestLeadAssignmentAPI(unittest.TestCase):
 
 		# Check comment timeline log
 		comments = frappe.get_all(
-			"Comment",
-			filters={"reference_doctype": "A2C Lead", "reference_name": self.lead_id},
-			fields=["content"]
+			"A2C Lead Audit Event",
+			filters={"lead": self.lead_id},
+			fields=["event_description"]
 		)
-		self.assertTrue(any("Lead assigned to" in c["content"] for c in comments))
+		self.assertTrue(any("Assigned to" in c["event_description"] for c in comments))
 
 		# Check that get_leads returns the assigned_date field
 		list_res = get_leads(search_query=self.lead_id)

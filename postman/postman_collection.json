@@ -314,7 +314,7 @@
                             }
                         ],
                         "url": {
-                            "raw": "{{base_url}}/api/method/oan_a2c.api.v1.leads.get_lead_timeline?lead_id=LEAD-2026-00001",
+                            "raw": "{{base_url}}/api/method/oan_a2c.api.v1.leads.get_lead_timeline?lead_id=LEAD-2026-00001&event_type=",
                             "host": [
                                 "{{base_url}}"
                             ],
@@ -327,10 +327,15 @@
                                 {
                                     "key": "lead_id",
                                     "value": "LEAD-2026-00001"
+                                },
+                                {
+                                    "key": "event_type",
+                                    "value": "",
+                                    "description": "Optional filter. Pass 'Commented' to fetch only manual agent comments."
                                 }
                             ]
                         },
-                        "description": "Fetches a chronologically sorted history of comments and audit trails for a lead."
+                        "description": "Fetches a chronologically sorted history of A2C Lead Audit Events (timeline history) for a lead."
                     },
                     "response": []
                 },

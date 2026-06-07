@@ -97,7 +97,7 @@ class TestLeadCreditInfo(unittest.TestCase):
 
 	def test_3_create_credit_info_nonexistent_lead_throws(self):
 		"""Verifies controller rejects linking to nonexistent lead."""
-		with self.assertRaises(frappe.DoesNotExistError):
+		with self.assertRaises(frappe.LinkValidationError):
 			doc = frappe.new_doc("A2C Credit Information")
 			doc.lead = "LEAD-NONEXISTENT-99999"
 			doc.loan_type = "Input loan (seeds, agrochemicals)"

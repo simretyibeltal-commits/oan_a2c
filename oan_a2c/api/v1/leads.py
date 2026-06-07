@@ -140,6 +140,13 @@ def create_lead(phone_number=None, first_name=None, last_name=None, email=None, 
 	lead.status = "Active"
 	lead.insert(ignore_permissions=False)
 
+	audit_event = frappe.new_doc("A2C Lead Audit Event")
+	audit_event.lead = lead.name
+	audit_event.event_type = "Created"
+	audit_event.event_title = "Lead Created"
+	audit_event.event_description = f"Imported from {lead_source}" if lead_source else "Manually created"
+	audit_event.insert(ignore_permissions=True)
+
 	return {
 		"status": "success",
 		"lead_id": lead.name,
@@ -244,16 +251,15 @@ def add_lead_credit_info(lead_id=None, loan_type=None, loan_amount=None, purpose
 	credit_info.purpose_message = purpose_message
 	credit_info.insert(ignore_permissions=False)
 
-	# Insert timeline comment
-	comment_content = _("Credit Information added: {0} for ETB {1:,.2f}.").format(
+	# Insert Audit Event
+	audit_event = frappe.new_doc("A2C Lead Audit Event")
+	audit_event.lead = lead_id
+	audit_event.event_type = "Credit Info Added"
+	audit_event.event_title = "Credit Info Added"
+	audit_event.event_description = _("Credit Information added: {0} for ETB {1:,.2f}.").format(
 		loan_type, float(loan_amount)
 	)
-	comment = frappe.new_doc("Comment")
-	comment.comment_type = "Comment"
-	comment.reference_doctype = "A2C Lead"
-	comment.reference_name = lead_id
-	comment.content = comment_content
-	comment.insert(ignore_permissions=True)
+	audit_event.insert(ignore_permissions=True)
 
 	return {
 		"status": "success",
@@ -326,18 +332,18 @@ def update_lead_status(lead_id=None, status=None, reason=None):
 	lead_doc.status = status
 	lead_doc.save(ignore_permissions=False)
 
-	# 4. Insert Timeline Comment (Activity history)
-	comment_text = _("Status updated to {0}").format(status)
+	# 4. Insert Timeline Audit Event
+	description = _("Changed to {0}").format(status)
 	if reason:
-		comment_text += f"\n*Reason:* {reason}"
-	comment_text += f"\n*Updated by:* {frappe.session.user}"
+		description += f"\nReason: {reason}"
+	description += f"\nUpdated by: {frappe.session.user}"
 
-	comment = frappe.new_doc("Comment")
-	comment.comment_type = "Comment"
-	comment.reference_doctype = "A2C Lead"
-	comment.reference_name = lead_id
-	comment.content = comment_text
-	comment.insert(ignore_permissions=True)
+	audit_event = frappe.new_doc("A2C Lead Audit Event")
+	audit_event.lead = lead_id
+	audit_event.event_type = "Status Changed"
+	audit_event.event_title = "Status Updated"
+	audit_event.event_description = description
+	audit_event.insert(ignore_permissions=True)
 
 	return {
 		"status": "success",
@@ -359,7 +365,8 @@ def get_assignable_users(search_query=None):
 	role_users = frappe.get_list(
 		"Has Role",
 		filters={"role": ["in", ["Development Agent", "Bank Agent"]]},
-		pluck="parent"
+		pluck="parent",
+		ignore_permissions=True
 	)
 
 	if not role_users:
@@ -385,7 +392,8 @@ def get_assignable_users(search_query=None):
 		fields=["name", "email", "full_name", "username", "location"],
 		filters=user_filters,
 		or_filters=or_filters or None,
-		order_by="full_name asc"
+		order_by="full_name asc",
+		ignore_permissions=True
 	)
 
 	# Format response properties to match UI mockup requirements (agent_id and region)
@@ -447,16 +455,13 @@ def assign_lead(lead_id=None, assigned_to=None):
 	lead_doc.assigned_date = now_date
 	lead_doc.save(ignore_permissions=False)
 
-	# Log Comment
-	comment_text = _("Lead assigned to {0}").format(assignee_name)
-	comment_text += f"\n*Assigned by:* {frappe.session.user}"
-
-	comment = frappe.new_doc("Comment")
-	comment.comment_type = "Comment"
-	comment.reference_doctype = "A2C Lead"
-	comment.reference_name = lead_id
-	comment.content = comment_text
-	comment.insert(ignore_permissions=True)
+	# Log Audit Event
+	audit_event = frappe.new_doc("A2C Lead Audit Event")
+	audit_event.lead = lead_id
+	audit_event.event_type = "Assigned"
+	audit_event.event_title = "Assigned to Owner"
+	audit_event.event_description = _("Assigned to {0}").format(assignee_name)
+	audit_event.insert(ignore_permissions=True)
 
 	return {
 		"status": "success",
@@ -481,24 +486,25 @@ def add_lead_comment(lead_id=None, content=None):
 	# Verify user has write permissions on this specific lead document
 	frappe.has_permission("A2C Lead", "write", doc=lead_id, throw=True)
 
-	comment = frappe.new_doc("Comment")
-	comment.comment_type = "Comment"
-	comment.reference_doctype = "A2C Lead"
-	comment.reference_name = lead_id
-	comment.content = content
-	comment.insert(ignore_permissions=False)
+	audit_event = frappe.new_doc("A2C Lead Audit Event")
+	audit_event.lead = lead_id
+	audit_event.event_type = "Commented"
+	audit_event.event_title = "Agent Note"
+	audit_event.event_description = content
+	audit_event.insert(ignore_permissions=False)
 
 	return {
 		"status": "success",
-		"comment_id": comment.name,
+		"comment_id": audit_event.name,
 		"message": _("Comment added successfully.")
 	}
 
 
 @frappe.whitelist(allow_guest=False)
-def get_lead_timeline(lead_id=None):
+def get_lead_timeline(lead_id=None, event_type=None):
 	"""
 	Retrieves the historical timeline of comments and system activities for a specific lead.
+	Optionally filter by event_type (e.g., 'Commented' for manual notes only).
 	Enforces JWT session validation and explicit document-level read permissions.
 	"""
 	if not lead_id:
@@ -507,20 +513,21 @@ def get_lead_timeline(lead_id=None):
 	# Verify user has read permissions on this specific lead document
 	frappe.has_permission("A2C Lead", "read", doc=lead_id, throw=True)
 
-	comments = frappe.get_list(
-		"Comment",
-		fields=["name", "comment_by", "content", "creation", "comment_type"],
-		filters={
-			"reference_doctype": "A2C Lead",
-			"reference_name": lead_id
-		},
+	filters = {"lead": lead_id}
+	if event_type:
+		filters["event_type"] = event_type
+
+	timeline = frappe.get_list(
+		"A2C Lead Audit Event",
+		fields=["name", "event_type", "event_title", "event_description", "creation", "owner"],
+		filters=filters,
 		order_by="creation desc"
 	)
 
 	return {
 		"status": "success",
 		"lead_id": lead_id,
-		"timeline": comments
+		"timeline": timeline
 	}
 
 
@@ -620,16 +627,15 @@ def schedule_visit(
 		lead_doc.status = "Verified"
 		lead_doc.save(ignore_permissions=False)
 
-	# Insert timeline comment
-	comment_content = _("Visit scheduled for {0} at {1} by {2}.").format(
-		visit_date, visit_time, frappe.session.user
+	# Insert Audit Event
+	audit_event = frappe.new_doc("A2C Lead Audit Event")
+	audit_event.lead = lead_id
+	audit_event.event_type = "Visit Scheduled"
+	audit_event.event_title = "Visit Scheduled"
+	audit_event.event_description = _("Visit scheduled for {0} at {1}.").format(
+		visit_date, visit_time
 	)
-	comment = frappe.new_doc("Comment")
-	comment.comment_type = "Comment"
-	comment.reference_doctype = "A2C Lead"
-	comment.reference_name = lead_id
-	comment.content = comment_content
-	comment.insert(ignore_permissions=True)
+	audit_event.insert(ignore_permissions=True)
 
 	return {
 		"status": "success",
