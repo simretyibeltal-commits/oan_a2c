@@ -6,6 +6,34 @@ import json
 
 class TestConsentAPI(unittest.TestCase):
     def setUp(self):
+        # Create missing Custom DocTypes if they don't exist in the database
+        if not frappe.db.exists("DocType", "Farmer"):
+            frappe.get_doc({
+                "doctype": "DocType",
+                "name": "Farmer",
+                "module": "OpenAgriNet Access to Credit",
+                "custom": 1,
+                "fields": [
+                    {"fieldname": "farmer_name", "fieldtype": "Data", "label": "Farmer Name"},
+                    {"fieldname": "full_name", "fieldtype": "Data", "label": "Full Name"},
+                    {"fieldname": "mobile_no", "fieldtype": "Data", "label": "Mobile No"},
+                    {"fieldname": "fayda_id", "fieldtype": "Data", "label": "Fayda ID"}
+                ],
+                "permissions": [{"role": "System Manager", "read": 1, "write": 1, "create": 1}]
+            }).insert(ignore_permissions=True)
+
+        if not frappe.db.exists("DocType", "Consent Partner Config"):
+            frappe.get_doc({
+                "doctype": "DocType",
+                "name": "Consent Partner Config",
+                "module": "OpenAgriNet Access to Credit",
+                "custom": 1,
+                "fields": [
+                    {"fieldname": "partner_name", "fieldtype": "Data", "label": "Partner Name"}
+                ],
+                "permissions": [{"role": "System Manager", "read": 1, "write": 1, "create": 1}]
+            }).insert(ignore_permissions=True)
+
         # Create necessary placeholder records
         if not frappe.db.exists("Farmer", "FAYDA-123"):
             frappe.get_doc({
@@ -21,6 +49,9 @@ class TestConsentAPI(unittest.TestCase):
                 "doctype": "Consent Partner Config",
                 "partner_name": "Test Partner"
             }).insert(ignore_permissions=True)
+
+        frappe.conf.secret_key = "test_secret_key"
+
 
     def _get_consent_values(self, name, *fields):
         """Helper: fetch consent request fields directly from DB to avoid child-table load."""

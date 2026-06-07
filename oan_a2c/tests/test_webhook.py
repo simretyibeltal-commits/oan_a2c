@@ -40,26 +40,27 @@ payload = {
   }
 }
 
-print("🚀 Sending test webhook to Frappe...")
+if __name__ == "__main__":
+	print("🚀 Sending test webhook to Frappe...")
 
-response = requests.post(
-    f"{FRAPPE_URL}/api/method/oan_a2c.api.webhook_api.receive_consent_data",
-    json=payload,
-    headers={
-        "Content-Type": "application/json",
-        "Accept": "application/json"
-    },
-    timeout=30
-)
+	response = requests.post(
+		f"{FRAPPE_URL}/api/method/oan_a2c.api.webhook_api.receive_consent_data",
+		json=payload,
+		headers={
+			"Content-Type": "application/json",
+			"Accept": "application/json"
+		},
+		timeout=30
+	)
 
-print(f"Status Code: {response.status_code}")
-print(f"Response: {response.text}")
+	print(f"Status Code: {response.status_code}")
+	print(f"Response: {response.text}")
 
-if response.status_code == 200:
-    try:
-        print("\n✅ Parsed Response:")
-        print(json.dumps(response.json(), indent=2))
-    except:
-        pass
-else:
-    print("❌ Failed to send webhook")
+	if response.status_code == 200:
+		try:
+			print("\n✅ Parsed Response:")
+			print(json.dumps(response.json(), indent=2))
+		except:
+			pass
+	else:
+		print("❌ Failed to send webhook")
