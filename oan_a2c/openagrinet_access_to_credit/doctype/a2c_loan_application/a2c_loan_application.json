@@ -284,8 +284,7 @@
    "fieldname": "consent_id",
    "fieldtype": "Link",
    "label": "Consent ID",
-   "options": "Consent Request",
-   "unique": 1
+   "options": "A2C Consent Request"
   }
  ],
  "grid_page_length": 50,

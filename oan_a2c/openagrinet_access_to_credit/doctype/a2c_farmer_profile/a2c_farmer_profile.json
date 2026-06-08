@@ -58,7 +58,7 @@
    "fieldname": "consent_id",
    "fieldtype": "Link",
    "label": "Consent ID",
-   "options": "Consent Request"
+   "options": "A2C Consent Request"
   },
   {
    "fieldname": "first_name",

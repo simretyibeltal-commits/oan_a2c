@@ -39,7 +39,52 @@ def get_loan_summary():
         return {"status": "error", "message": str(e)}
 
 @frappe.whitelist()
-def get_all_loans(status=None, loan_amount=None, loan_type=None, location=None, from_date=None, to_date=None, page=1, page_size=20):
+def get_loan_assignment_summary():
+    try:
+        if not frappe.has_permission("A2C Loan Application", "read"):
+            return {"status": "error", "message": "Not permitted to view Loan Applications"}
+
+        user = frappe.session.user
+
+        total = frappe.db.count("A2C Loan Application")
+        my_applications = frappe.db.count("A2C Loan Application", {"loan_officer": user})
+        unassigned = frappe.db.count("A2C Loan Application", {"loan_officer": ["in", ["", None]]})
+
+        return {
+            "status": "success",
+            "summary": {
+                "all_applications": total,
+                "my_applications": my_applications,
+                "unassigned": unassigned
+            }
+        }
+    except Exception as e:
+        frappe.log_error(frappe.get_traceback(), "Get Loan Assignment Summary Error")
+        return {"status": "error", "message": str(e)}
+
+@frappe.whitelist()
+def get_loan_metadata():
+    try:
+        if not frappe.has_permission("A2C Loan Application", "read"):
+            return {"status": "error", "message": "Not permitted"}
+            
+        meta = frappe.get_meta("A2C Loan Application")
+        status_field = meta.get_field("status")
+        type_field = meta.get_field("loan_type")
+        
+        statuses = status_field.options.split("\n") if status_field and status_field.options else []
+        loan_types = type_field.options.split("\n") if type_field and type_field.options else []
+        
+        return {
+            "status": "success",
+            "statuses": statuses,
+            "loan_types": loan_types
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@frappe.whitelist()
+def get_all_loans(status=None, loan_amount=None, min_loan_amount=None, max_loan_amount=None, loan_type=None, location=None, from_date=None, to_date=None, page=1, page_size=20):
     try:
         if not frappe.has_permission("A2C Loan Application", "read"):
             return {"status": "error", "message": "Not permitted to view Loan Applications"}
@@ -53,7 +98,13 @@ def get_all_loans(status=None, loan_amount=None, loan_type=None, location=None, 
         if status:
             filters['status'] = status
         
-        if loan_amount:
+        if min_loan_amount and max_loan_amount:
+            filters['loan_amount'] = ("between", [min_loan_amount, max_loan_amount])
+        elif min_loan_amount:
+            filters['loan_amount'] = (">=", min_loan_amount)
+        elif max_loan_amount:
+            filters['loan_amount'] = ("<=", max_loan_amount)
+        elif loan_amount:
             filters['loan_amount'] = loan_amount
 
         if loan_type:
@@ -93,9 +144,12 @@ def get_all_loans(status=None, loan_amount=None, loan_type=None, location=None, 
         return {"status": "error", "message": str(e)}
 
 @frappe.whitelist()
-def get_basic_profile(application_id):
+def get_basic_profile(lead_id):
     try:
-        doc = _get_app(application_id)
+        app_names = frappe.get_all("A2C Loan Application", filters={"lead_id": lead_id}, pluck="name", limit=1)
+        if not app_names:
+            return {"status": "error", "message": "Loan Application not found for this lead"}
+        doc = frappe.get_doc("A2C Loan Application", app_names[0])
         return {
             "status": "success",
             "data": {
@@ -110,9 +164,13 @@ def get_basic_profile(application_id):
         return {"status": "error", "message": str(e)}
 
 @frappe.whitelist()
-def get_full_profile(application_id):
+def get_full_profile(lead_id):
     try:
-        doc = _get_app(application_id)
+        app_names = frappe.get_all("A2C Loan Application", filters={"lead_id": lead_id}, pluck="name", limit=1)
+        if not app_names:
+            return {"status": "error", "message": "Loan Application not found for this lead"}
+        doc = frappe.get_doc("A2C Loan Application", app_names[0])
+        
         excluded_fields = [
             'loan_amount', 'loan_type', 'loan_reason', 'status', 
             'current_step', 'loan_officer', 'application_id'

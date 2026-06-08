@@ -12,7 +12,7 @@ def process_consent_data(data, consent_doc_name, consent_request_id):
         new_status = consent_info.get("status")
         if new_status:
             mapped_status = new_status.capitalize() if new_status.islower() else new_status
-            frappe.db.set_value("Consent Request", consent_doc_name, "status", mapped_status)
+            frappe.db.set_value("A2C Consent Request", consent_doc_name, "status", mapped_status)
 
         # Parse Farmer Data
         farmer_data = data.get("farmer", {})
@@ -38,7 +38,7 @@ def process_consent_data(data, consent_doc_name, consent_request_id):
         }
 
         # Fetch Consent Request to check links
-        consent_doc = frappe.get_doc("Consent Request", consent_doc_name)
+        consent_doc = frappe.get_doc("A2C Consent Request", consent_doc_name)
 
         # Update Loan Application
         loan_app_name = consent_doc.get("loan_application")
@@ -98,7 +98,7 @@ def receive_consent_data(**kwargs):
 
         # Find Consent Request
         consent_docs = frappe.get_all(
-            "Consent Request",
+            "A2C Consent Request",
             filters={"openg2p_consent_id": consent_request_id},
             fields=["name"],
             limit=1
