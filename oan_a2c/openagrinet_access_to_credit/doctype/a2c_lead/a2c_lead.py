@@ -70,7 +70,7 @@ class A2CLead(Document):
 		if not self.phone_number:
 			return
 
-		active_statuses = ("Open", "Initiated")
+		active_statuses = ("Active", "Verified")
 		existing = frappe.db.get_value(
 			"A2C Lead",
 			{

@@ -84,7 +84,7 @@ The `A2C Lead` DocType acts as the absolute top of the funnel. It is designed to
 | `last_name` | Last Name | Data | Optional | The farmer's last name. |
 | `email` | Email | Data | Optional, Email format | The farmer's email address. |
 | `lead_source` | Source | Select | `Missed Call`, `IVR`, `SMS`, `Agent Entry` | Origin of the lead (defaults to Missed Call). |
-| `status` | Lead Status | Select | `Open`, `Initiated`, `Qualified`, `Not Interested`, `Processed` | Workflow state of the initial discovery call. |
+| `status` | Lead Status | Select | `Active`, `Verified`, `Processed`, `Granted`, `Rejected`, `Dormant` | Workflow state of the initial discovery call. |
 | `assigned_to` | Assigned Agent | Link | `User` (DocType) | The call center agent or DA tasked with calling the farmer back. |
 | `call_notes` | Initial Call Notes | Text | Multiline | Brief summary of the initial discovery call. |
 | `linked_credit_case`| Converted Credit Case | Link | `A2C Credit Case` (DocType) | Read-only reference populated automatically when the lead expresses interest. |
@@ -95,7 +95,25 @@ The `A2C Lead` DocType acts as the absolute top of the funnel. It is designed to
 
 ---
 
-### **3.4 Credit Case Database Schema (Input Fields)**
+### **3.4 Credit Information Schema (A2C Credit Information)**
+This schema captures requested loan profiles associated with a discovery lead before initiating a formal underwriting case.
+
+| Field ID | Label | Field Type | Parameters / Options | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `lead` | Lead | Link | Options: `A2C Lead` (Mandatory) | The associated lead. |
+| `loan_type` | Loan Type | Select | Lookup options (Mandatory) | The category of credit requested by the lead. |
+| `loan_amount` | Loan Amount | Currency | Numeric (Mandatory) | The amount requested in ETB. |
+| `purpose_message` | Purpose Message | Small Text | Mandatory | Detailed text/notes explaining the requirement. |
+| `created_by` | Created By | Link | Options: `User` (Read Only) | The agent who recorded the request. |
+
+**Permissions Policy:**
+*   **`Development Agent` (DA):** Can Create and Read records.
+*   **`Bank Agent`:** Read-only access.
+*   **`System Manager`:** Full permissions.
+
+---
+
+### **3.5 Credit Case Database Schema (Input Fields)**
 To satisfy the pre-qualification and data gathering phase, the `A2C Credit Case` DocType will be built using the following structural data fields, grouped into distinct sections:
 
 #### **Section A: Loan Requirements**
@@ -299,7 +317,7 @@ To support automated intake from external telecommunication systems (e.g., IVR o
     ```
 *   **Idempotency & Dual-ID Deduplication Logic:** 
     1. **Primary Check (External Reference):** If `external_ref_id` is supplied, the webhook queries the indexed `external_id` field. If a match is found (even if closed or processed), it is updated idempotently rather than duplicated.
-    2. **Secondary Check (Active Funnel):** If no `external_ref_id` matches but an active lead (status `Open` or `Initiated`) already exists for the supplied `phone_number`, the system updates the existing lead's `call_notes` with the new event data.
+    2. **Secondary Check (Active Funnel):** If no `external_ref_id` matches but an active lead (status `Active` or `Verified`) already exists for the supplied `phone_number`, the system updates the existing lead's `call_notes` with the new event data.
     3. **Ingest & Creation:** If both checks fail, a new `A2C Lead` is created with the `external_id` set to `external_ref_id` to preserve lineage.
 
 ---
@@ -313,7 +331,7 @@ Exposes a secure, JWT-authenticated endpoint to query and retrieve leads with mu
     *   `start` *(Optional Int)*: Offset index to begin slice retrieval (defaults to `0`).
     *   `page_length` *(Optional Int)*: Max slice count to return (defaults to `20`, hard-capped at `100`).
     *   `search_query` *(Optional String)*: Fuzzy match substring querying across `name` (Lead ID), `phone_number`, and `external_id`.
-    *   `status` *(Optional String)*: Filter matching strict schema values (`Open`, `Initiated`, `Qualified`, `Not Interested`, `Processed`).
+    *   `status` *(Optional String)*: Filter matching strict schema values (`Active`, `Verified`, `Processed`, `Granted`, `Rejected`, `Dormant`).
     *   `lead_source` *(Optional String)*: Filter matching source (`Missed Call`, `IVR`, `SMS`, `Agent Entry`).
     *   `start_date` / `end_date` *(Optional String, YYYY-MM-DD)*: Boundary range matching Lead creation dates.
 *   **Success Response (HTTP 200):**
@@ -330,7 +348,7 @@ Exposes a secure, JWT-authenticated endpoint to query and retrieve leads with mu
             "phone_number": "+251911000001",
             "external_id": "TELCO-778899",
             "lead_source": "Missed Call",
-            "status": "Qualified",
+            "status": "Verified",
             "assigned_to": "agent.ethiopia@coopbank.com",
             "creation": "2026-05-26 12:00:00"
           },
@@ -339,7 +357,7 @@ Exposes a secure, JWT-authenticated endpoint to query and retrieve leads with mu
             "phone_number": "+251911000002",
             "external_id": null,
             "lead_source": "Agent Entry",
-            "status": "Open",
+            "status": "Active",
             "assigned_to": null,
             "creation": "2026-05-26 12:05:00"
           }
@@ -396,11 +414,12 @@ Provides aggregated, cache-aware lead metrics grouped by their workflow states. 
         "status": "success",
         "total": 5,
         "by_status": {
-          "Open": 2,
-          "Initiated": 1,
-          "Qualified": 1,
-          "Not Interested": 0,
-          "Processed": 1
+          "Active": 2,
+          "Verified": 1,
+          "Processed": 1,
+          "Granted": 1,
+          "Rejected": 0,
+          "Dormant": 0
         }
       }
     }
@@ -423,17 +442,26 @@ Dynamically loads valid Select options for metadata fields within Lead forms. Av
       "message": {
         "status": "success",
         "statuses": [
-          "Open",
-          "Initiated",
-          "Qualified",
-          "Not Interested",
-          "Processed"
+          "Active",
+          "Verified",
+          "Processed",
+          "Granted",
+          "Rejected",
+          "Dormant"
         ],
         "sources": [
           "Missed Call",
           "IVR",
           "SMS",
           "Agent Entry"
+        ],
+        "loan_types": [
+          "Input loan (seeds, agrochemicals)",
+          "Agricultural term loan",
+          "Smallholder short-term loan",
+          "Land loan",
+          "Farm equipment loan",
+          "Smallholder farmer direct loan"
         ]
       }
     }
@@ -527,6 +555,232 @@ Parses unstructured raw multiline telco and call agent logs from the lead's note
 *   **Security & Parser Specs:**
     1. **Document-Level Permissions:** Checks explicit user `read` permissions on the specific document instance via `frappe.has_permission(..., doc=lead_id)`.
     2. **Dynamically Parsed Values:** Converts structured ` | ` separated string segments within the `call_notes` field into low-friction JSON objects.
+
+---
+
+### **4.12 Schedule Visit**
+Schedules a physical or field agent visit for a specific lead, updates the lead status, and appends a system notification to the lead's timeline history.
+
+*   **Endpoint:** `POST /api/method/oan_a2c.api.v1.leads.schedule_visit`
+*   **Authentication Required:** Yes (JWT Bearer Token inside standard `Authorization: Bearer <token>` header).
+*   **Request Payload:**
+    ```json
+    {
+      "lead_id": "LEAD-2026-00003",
+      "visit_date": "2026-06-10",
+      "visit_time": "14:30:00",
+      "region": "Oromia",
+      "zone": "East Shewa",
+      "woreda": "Ada'ama",
+      "kebele": "Kebele 02",
+      "meeting_location": "Cooperative Office",
+      "notes": "Bring physical copies of farm documents"
+    }
+    ```
+*   **Success Response (HTTP 200):**
+    ```json
+    {
+      "message": {
+        "status": "success",
+        "schedule_id": "VSCH-2026-00001",
+        "message": "Visit scheduled successfully."
+      }
+    }
+    ```
+*   **Validation & Side Effects:**
+    1. **Role Permissions:** Enforces write permissions on `A2C Lead` and create permissions on `A2C Visit Schedule` for the authenticated session user.
+    2. **Funnel Progression:** Automatically transitions `A2C Lead` status from `Active` to `Verified`.
+    3. **Timeline Comment:** Automatically posts an audit trail comment to the lead's activity timeline.
+
+---
+
+### **4.13 Get Visit Schedules**
+Retrieves a paginated list of scheduled field agent visits, automatically filtered based on active RBAC/user permissions.
+
+*   **Endpoint:** `GET /api/method/oan_a2c.api.v1.leads.get_visit_schedules`
+*   **Authentication Required:** Yes (JWT Bearer Token inside standard `Authorization: Bearer <token>` header).
+*   **Request Parameters:**
+    *   `lead_id` *(Optional String)*: Filter visits by specific Lead ID.
+    *   `start_date` / `end_date` *(Optional String, YYYY-MM-DD)*: Filter visits by scheduling date range.
+    *   `status` *(Optional String)*: Filter visits by status (`Scheduled`, `Completed`, `Cancelled`, `Missed`).
+    *   `start` *(Optional Int)*: Offset index (defaults to `0`).
+    *   `page_length` *(Optional Int)*: Max records count per page (defaults to `20`, capped at `100`).
+*   **Success Response (HTTP 200):**
+    ```json
+    {
+      "message": {
+        "status": "success",
+        "start": 0,
+        "page_length": 20,
+        "total_count": 1,
+        "results": [
+          {
+            "name": "VSCH-2026-00001",
+            "lead": "LEAD-2026-00003",
+            "visit_date": "2026-06-10",
+            "visit_time": "14:30:00",
+            "meeting_location": "Cooperative Office",
+            "region": "Oromia",
+            "zone": "East Shewa",
+            "woreda": "Ada'ama",
+            "kebele": "Kebele 02",
+            "status": "Scheduled",
+            "scheduled_by": "agent.ethiopia@coopbank.com",
+            "creation": "2026-06-05 10:00:00"
+          }
+        ]
+      }
+    }
+    ```
+*   **Security Specs:**
+    1. **Multi-Tenant Isolation:** Relies entirely on `frappe.get_list` to automatically enforce multi-tenant database filtering based on active User Permissions.
+
+---
+
+### **4.14 Add Lead Credit Information**
+Creates a new `A2C Credit Information` record linked to a discovery lead.
+
+*   **Endpoint:** `POST /api/method/oan_a2c.api.v1.leads.add_lead_credit_info`
+*   **Authentication Required:** Yes (JWT Bearer Token)
+*   **Request Payload:**
+    ```json
+    {
+      "lead_id": "LEAD-2026-00001",
+      "loan_type": "Input loan (seeds, agrochemicals)",
+      "loan_amount": 90000.00,
+      "purpose_message": "Met with farmer at the cooperative office. Recommended for the Fertilizer 2026 campaign."
+    }
+    ```
+*   **Success Response (HTTP 200):**
+    ```json
+    {
+      "message": {
+        "status": "success",
+        "credit_info_id": "LCR-2026-00001",
+        "message": "Credit information added successfully."
+      }
+    }
+    ```
+*   **Validation Rules:**
+    1.  **Lead Existence:** Validates the lead exists.
+    2.  **Amount Check:** Verifies loan_amount is a positive non-zero number.
+    3.  **Dropdown options:** Validates loan_type matches permitted metadata.
+
+---
+
+### **4.15 Get Lead Credit Information**
+Retrieves the list of credit requests for a lead, sorted newest to oldest.
+
+*   **Endpoint:** `GET /api/method/oan_a2c.api.v1.leads.get_lead_credit_infos`
+*   **Authentication Required:** Yes (JWT Bearer Token)
+*   **Request Parameters:**
+    *   `lead_id` *(Required String)*: ID of the targeted lead.
+*   **Success Response (HTTP 200):**
+    ```json
+    {
+      "message": {
+        "status": "success",
+        "results": [
+          {
+            "name": "LCR-2026-00001",
+            "loan_type": "Input loan (seeds, agrochemicals)",
+            "loan_amount": 90000.00,
+            "purpose_message": "Met with farmer at the cooperative office. Recommended for the Fertilizer 2026 campaign.",
+            "created_by": "agent.ethiopia@coopbank.com",
+            "creation": "2026-06-05 14:30:00"
+          }
+        ]
+      }
+    }
+    ```
+
+---
+
+### **4.16 Update Lead Status**
+Updates the workflow status of an A2C Lead, records the transition reason, and enforces terminal status locking.
+
+*   **Endpoint:** `POST /api/method/oan_a2c.api.v1.leads.update_lead_status`
+*   **Authentication Required:** Yes (JWT Bearer Token)
+*   **Request Payload:**
+    ```json
+    {
+      "lead_id": "LEAD-2026-00001",
+      "status": "Processed",
+      "reason": "Lead meets criteria and is ready to be processed further."
+    }
+    ```
+*   **Success Response (HTTP 200):**
+    ```json
+    {
+      "message": {
+        "status": "success",
+        "lead_id": "LEAD-2026-00001",
+        "new_status": "Processed",
+        "message": "Lead status updated successfully."
+      }
+    }
+    ```
+*   **Validation & Side Effects:**
+    1.  **Lead Existence:** Validates the target lead exists.
+    2.  **Terminal Locking:** If the lead is already in `Processed`, `Rejected`, `Granted`, or `Dormant` state, status update requests are rejected.
+    3.  **Timeline Comment:** Appends a formatted comment detailing the status transition, target status, internal reason note, and the updating agent's user email.
+
+---
+
+### **4.17 Get Assignable Users**
+Retrieves eligible lead assignees holding the `Development Agent` or `Bank Agent` role.
+
+*   **Endpoint:** `GET /api/method/oan_a2c.api.v1.leads.get_assignable_users`
+*   **Authentication Required:** Yes (JWT Bearer Token)
+*   **Request Parameters:**
+    *   `search_query` *(Optional String)*: Filter matching name, email, or username.
+*   **Success Response (HTTP 200):**
+    ```json
+    {
+      "message": {
+        "status": "success",
+        "results": [
+          {
+            "email": "sara.bekele@coopbank.com",
+            "full_name": "Sara Bekele",
+            "agent_id": "AG-2024-0156",
+            "region": "Oromia"
+          }
+        ]
+      }
+    }
+    ```
+
+---
+
+### **4.18 Assign Lead**
+Assigns a lead to an agent, updates the assignment date stamp, and logs a timeline comment.
+
+*   **Endpoint:** `POST /api/method/oan_a2c.api.v1.leads.assign_lead`
+*   **Authentication Required:** Yes (JWT Bearer Token)
+*   **Request Payload:**
+    ```json
+    {
+      "lead_id": "LEAD-2026-00001",
+      "assigned_to": "sara.bekele@coopbank.com"
+    }
+    ```
+*   **Success Response (HTTP 200):**
+    ```json
+    {
+      "message": {
+        "status": "success",
+        "lead_id": "LEAD-2026-00001",
+        "assigned_to": "sara.bekele@coopbank.com",
+        "assigned_date": "2026-06-05",
+        "message": "Lead assigned successfully."
+      }
+    }
+    ```
+*   **Validation & Side Effects:**
+    1.  **Lead Existence:** Validates the lead exists.
+    2.  **User existence:** Validates the assignee is an enabled User.
+    3.  **Timeline Comment:** Inserts a system comment logging the assignment to the lead's timeline feed.
 
 ---
 
