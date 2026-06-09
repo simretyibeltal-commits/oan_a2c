@@ -8,6 +8,64 @@ def _get_app(application_id):
     return frappe.get_doc("A2C Loan Application", application_id)
 
 @frappe.whitelist()
+def get_basic_profile(lead_id):
+    try:
+        lead_doc = frappe.get_doc("A2C Lead", lead_id)
+        if not lead_doc.farmer_profile:
+            return {"status": "error", "message": "Farmer Profile not found for this lead"}
+        
+        doc = frappe.get_doc("A2C Farmer Profile", lead_doc.farmer_profile)
+        return {
+            "status": "success",
+            "data": {
+                "first_name": doc.first_name,
+                "last_name": doc.last_name,
+                "phone_number": doc.phone_number,
+                "email": doc.email,
+                "location": doc.location
+            }
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@frappe.whitelist()
+def get_full_profile(application_id=None, lead_id=None):
+    """
+    Retrieves the full profile details of a loan application.
+    Supports looking up the application by application_id, lead_id, or both.
+    If both are provided, it validates that they refer to the same application to prevent mismatches.
+    """
+    try:
+        if not application_id and not lead_id:
+            return {"status": "error", "message": "Either application_id or lead_id is required"}
+
+        if application_id and lead_id:
+            doc = _get_app(application_id)
+            if doc.lead_id != lead_id:
+                return {"status": "error", "message": "Mismatched application_id and lead_id"}
+        elif application_id:
+            doc = _get_app(application_id)
+        else:
+            apps = frappe.get_all("A2C Loan Application", filters={"lead_id": lead_id}, fields=["name"], limit=1)
+            if not apps:
+                return {"status": "error", "message": "Loan Application not found for this lead"}
+            doc = frappe.get_doc("A2C Loan Application", apps[0].name)
+
+        data = doc.as_dict()
+        filtered_data = {
+            k: v for k, v in data.items() 
+            if not k.startswith('_') and k not in ('doctype', 'docstatus', 'idx')
+        }
+        filtered_data["application_id"] = doc.name
+        
+        return {
+            "status": "success",
+            "data": filtered_data
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@frappe.whitelist()
 def get_loan_summary():
     try:
         if not frappe.has_permission("A2C Loan Application", "read"):
@@ -70,21 +128,18 @@ def get_loan_metadata():
             
         meta = frappe.get_meta("A2C Loan Application")
         status_field = meta.get_field("status")
-        type_field = meta.get_field("loan_type")
         
-        statuses = status_field.options.split("\n") if status_field and status_field.options else []
-        loan_types = type_field.options.split("\n") if type_field and type_field.options else []
+        statuses = [s for s in status_field.options.split("\n") if s] if status_field and status_field.options else []
         
         return {
             "status": "success",
-            "statuses": statuses,
-            "loan_types": loan_types
+            "statuses": statuses
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
 @frappe.whitelist()
-def get_all_loans(status=None, loan_amount=None, min_loan_amount=None, max_loan_amount=None, loan_type=None, location=None, from_date=None, to_date=None, page=1, page_size=20):
+def get_all_loans(status=None, loan_amount=None, min_loan_amount=None, max_loan_amount=None, loan_type=None, location=None, phone_number=None, from_date=None, to_date=None, page=1, page_size=20):
     try:
         if not frappe.has_permission("A2C Loan Application", "read"):
             return {"status": "error", "message": "Not permitted to view Loan Applications"}
@@ -113,6 +168,9 @@ def get_all_loans(status=None, loan_amount=None, min_loan_amount=None, max_loan_
         if location:
             filters['location'] = ("like", f"%{location}%")
 
+        if phone_number:
+            filters['phone_number'] = ("like", f"%{phone_number}%")
+
         if from_date and to_date:
             filters['creation'] = ("between", [from_date, f"{to_date} 23:59:59"])
         elif from_date:
@@ -125,7 +183,7 @@ def get_all_loans(status=None, loan_amount=None, min_loan_amount=None, max_loan_
         records = frappe.get_all(
             "A2C Loan Application",
             filters=filters,
-            fields=["*", "name as application_id"],
+            fields=["name as application_id", "status", "loan_amount", "loan_type", "location", "phone_number", "creation"],
             order_by="creation DESC",
             limit_start=offset,
             limit_page_length=page_size
@@ -142,90 +200,11 @@ def get_all_loans(status=None, loan_amount=None, min_loan_amount=None, max_loan_
         frappe.log_error(frappe.get_traceback(), "Get All Loans Error")
         return {"status": "error", "message": str(e)}
 
-@frappe.whitelist()
-def get_basic_profile(lead_id):
-    try:
-        lead_doc = frappe.get_doc("A2C Lead", lead_id)
-        if not lead_doc.farmer_profile:
-            return {"status": "error", "message": "Farmer Profile not found for this lead"}
-        
-        doc = frappe.get_doc("A2C Farmer Profile", lead_doc.farmer_profile)
-        return {
-            "status": "success",
-            "data": {
-                "first_name": doc.first_name,
-                "last_name": doc.last_name,
-                "phone_number": doc.phone_number,
-                "email": doc.email,
-                "location": doc.location
-            }
-        }
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
 
-@frappe.whitelist()
-def get_full_profile(lead_id):
-    try:
-        lead_doc = frappe.get_doc("A2C Lead", lead_id)
-        if not lead_doc.farmer_profile:
-            return {"status": "error", "message": "Farmer Profile not found for this lead"}
-            
-        doc = frappe.get_doc("A2C Farmer Profile", lead_doc.farmer_profile)
 
-        data = doc.as_dict()
-        filtered_data = {
-            k: v for k, v in data.items() 
-            if not k.startswith('_')
-        }
-        
-        return {
-            "status": "success",
-            "data": filtered_data
-        }
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
 
-@frappe.whitelist()
-def get_credit_info(application_id):
-    try:
-        doc = _get_app(application_id)
-        return {
-            "status": "success",
-            "data": {
-                "loan_amount": doc.loan_amount,
-                "loan_type": doc.loan_type,
-                "loan_reason": doc.loan_reason,
-                "status": doc.status
-            }
-        }
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
 
-@frappe.whitelist(methods=["POST"])
-def edit_credit_info(**kwargs):
-    try:
-        data = kwargs
-        application_id = data.get("application_id")
-        if not application_id:
-            return {"status": "error", "message": "application_id is required"}
 
-        doc = _get_app(application_id)
-        
-        if "loan_amount" in data: doc.loan_amount = data["loan_amount"]
-        if "loan_type" in data: doc.loan_type = data["loan_type"]
-        if "loan_reason" in data: doc.loan_reason = data["loan_reason"]
-        if "status" in data: doc.status = data["status"]
-
-        doc.save(ignore_permissions=True)
-        frappe.db.commit()
-
-        return {
-            "status": "success",
-            "message": "Credit info updated successfully"
-        }
-    except Exception as e:
-        frappe.log_error(frappe.get_traceback(), "Edit Credit Info Error")
-        return {"status": "error", "message": str(e)}
 
 @frappe.whitelist(methods=["POST"])
 def upload_supporting_documents(application_id):
@@ -273,6 +252,9 @@ def upload_supporting_documents(application_id):
 @frappe.whitelist()
 def get_supporting_documents(application_id):
     try:
+        # Validate that the application exists
+        _get_app(application_id)
+        
         files = frappe.get_all(
             "File",
             filters={
