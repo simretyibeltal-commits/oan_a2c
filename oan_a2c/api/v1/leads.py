@@ -8,7 +8,7 @@ import frappe
 import zlib
 from frappe import _
 from frappe.utils import sanitize_html, strip_html
-from oan_a2c.api.utils import success_response, handle_api_errors, parse_multi_value, validate_request, SafeDate, SafeEmail
+from oan_a2c.api.utils import success_response, handle_api_errors, parse_multi_value, validate_request, SafeDate, SafeEmail, apply_status_transition
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Literal
 
@@ -19,6 +19,7 @@ class GetLeadsSchema(BaseModel):
 	status: Optional[str] = None
 	lead_source: Optional[str] = None
 	loan_type: Optional[str] = None
+	assigned_to: Optional[str] = None
 	start_date: SafeDate = None
 	end_date: SafeDate = None
 	min_loan_amount: Optional[float] = None
@@ -36,7 +37,7 @@ class CreateLeadSchema(BaseModel):
 class AddLeadCreditInfoSchema(BaseModel):
 	lead_id: str = Field(..., min_length=1)
 	loan_type: str = Field(..., min_length=1)
-	loan_amount: float = Field(..., gt=0)
+	loan_amount: float = Field(..., gt=0, le=999999999999.0)
 	purpose_message: str = Field(..., min_length=1)
 
 class LeadIDSchema(BaseModel):
@@ -103,6 +104,7 @@ def get_leads(**kwargs):
 	status = kwargs.get("status")
 	lead_source = kwargs.get("lead_source")
 	loan_type = kwargs.get("loan_type")
+	assigned_to = kwargs.get("assigned_to")
 	start_date = kwargs.get("start_date")
 	end_date = kwargs.get("end_date")
 	min_loan_amount = kwargs.get("min_loan_amount")
@@ -128,6 +130,21 @@ def get_leads(**kwargs):
 		valid_sources = parse_multi_value(lead_source, allowed_sources)
 		if valid_sources:
 			filters.append(["lead_source", "in", valid_sources])
+
+	# Apply Assigned Agent Filter (single user, comma-separated users, or the literal
+	# "unassigned" to return leads with no agent). User values are not constrained to an
+	# allowlist here; an unknown user simply yields no matches.
+	if assigned_to:
+		agents = [a.strip() for a in str(assigned_to).split(",") if a.strip()]
+		if any(a.lower() == "unassigned" for a in agents):
+			named = [a for a in agents if a.lower() != "unassigned"]
+			if named:
+				# "unassigned" OR one of the named agents
+				filters.append(["assigned_to", "in", named + [""]])
+			else:
+				filters.append(["assigned_to", "in", ["", None]])
+		elif agents:
+			filters.append(["assigned_to", "in", agents])
 
 	# Apply Creation Date Range Filter
 	if start_date and end_date:
@@ -223,6 +240,29 @@ def get_leads(**kwargs):
 			info = latest_credit_map.get(lead["name"])
 			lead["loan_type"] = info.get("loan_type") if info else None
 			lead["loan_amount"] = info.get("loan_amount") if info else None
+
+		# Fold each lead's latest visit (date + status) into the list response in a single
+		# query scoped to this page's leads, instead of the frontend bulk-prefetching every
+		# Visit Schedule on each render. Visit Schedule remains the source of truth (read on
+		# demand here); no field is stored on the Lead and no write-back hook fires on visit
+		# changes, so there is nothing to keep in sync and no staleness.
+		all_visits = frappe.get_all(
+			"A2C Visit Schedule",
+			filters={"lead": ["in", lead_names]},
+			fields=["lead", "visit_date", "status"],
+			order_by="visit_date desc, visit_time desc"
+		)
+
+		latest_visit_map = {}
+		for visit in all_visits:
+			lead_name = visit["lead"]
+			if lead_name not in latest_visit_map:
+				latest_visit_map[lead_name] = visit
+
+		for lead in leads:
+			visit = latest_visit_map.get(lead["name"])
+			lead["visit_date"] = visit.get("visit_date") if visit else None
+			lead["schedule_status"] = visit.get("status") if visit else None
 
 	total_pages = -(-total_count // page_length)
 	has_next = start + page_length < total_count
@@ -337,11 +377,25 @@ def get_lead_summary():
 		count = cnt_res[0].get("COUNT(*)") if cnt_res else 0
 		counts_by_status[status] = count
 		total_count += count
-		
+
+	# Assignment split: a lead is "assigned" when assigned_to is set, else "unassigned".
+	assigned_res = frappe.get_list(
+		"A2C Lead",
+		filters={"assigned_to": ["is", "set"]},
+		fields=[{"COUNT": "*"}]
+	)
+	assigned_count = assigned_res[0].get("COUNT(*)") if assigned_res else 0
+	unassigned_count = total_count - assigned_count
+
 	return success_response(
 		data={
 			"total": total_count,
-			"by_status": counts_by_status
+			"by_status": counts_by_status,
+			"tab_counts": {
+				"all": total_count,
+				"assigned": assigned_count,
+				"unassigned": unassigned_count
+			}
 		},
 		message="Lead summary retrieved successfully"
 	)
@@ -356,6 +410,15 @@ def get_lead_metadata():
 	"""
 	frappe.has_permission("A2C Lead", "read", throw=True)
 
+	# This payload is derived purely from doctype Select options, which only change on
+	# migrate. Cache it for an hour instead of recomputing meta on every call (this endpoint
+	# fires on every New Lead form mount). The cache key is global (not user-scoped) because
+	# the options are identical for all users; RBAC is still enforced above on every request.
+	cache_key = "a2c_lead_metadata"
+	cached = frappe.cache().get_value(cache_key)
+	if cached:
+		return success_response(data=cached, message="Lead metadata retrieved successfully")
+
 	meta = frappe.get_meta("A2C Lead")
 	status_field = meta.get_field("status")
 	source_field = meta.get_field("lead_source")
@@ -367,14 +430,14 @@ def get_lead_metadata():
 	loan_type_field = credit_meta.get_field("loan_type")
 	loan_types = loan_type_field.options.split("\n") if loan_type_field else []
 
-	return success_response(
-		data={
-			"statuses": statuses,
-			"sources": sources,
-			"loan_types": loan_types
-		},
-		message="Lead metadata retrieved successfully"
-	)
+	data = {
+		"statuses": statuses,
+		"sources": sources,
+		"loan_types": loan_types
+	}
+	frappe.cache().set_value(cache_key, data, expires_in_sec=3600)
+
+	return success_response(data=data, message="Lead metadata retrieved successfully")
 
 
 @frappe.whitelist(allow_guest=False)
@@ -487,27 +550,10 @@ def update_lead_status(**kwargs):
 
 	lead_doc = frappe.get_doc("A2C Lead", lead_id)
 
-	# 2. Enforce Terminal State Locking
-	terminal_statuses = ("Granted", "Rejected", "Dormant")
-	if lead_doc.status in terminal_statuses:
-		frappe.throw(
-			_("Lead status is locked and cannot be updated because its current state is '{0}'.").format(lead_doc.status),
-			frappe.ValidationError
-		)
-
-	if lead_doc.status == "Processed" and status not in ("Granted", "Rejected"):
-		frappe.throw(
-			_("A 'Processed' lead can only be changed to 'Granted' or 'Rejected'."),			frappe.ValidationError
-		)
-
-	# 3. Validate target status
-	allowed_statuses = ("Active", "Verified", "Processed", "Granted", "Rejected", "Dormant")
-	if status not in allowed_statuses:
-		frappe.throw(_("Invalid status: {0}").format(status), frappe.ValidationError)
-
-	old_status = lead_doc.status
-	lead_doc.status = status
-	lead_doc.save(ignore_permissions=False)
+	# 2. Apply the status change through the A2C Lead Workflow. The workflow enforces legal
+	# transitions, terminal-state locking, and per-role gating declaratively (replacing the
+	# previous imperative checks). Illegal/unauthorised targets raise ValidationError.
+	apply_status_transition(lead_doc, status)
 
 	# 4. Insert Timeline Audit Event
 	description = _("Changed to {0}").format(status)
