@@ -203,7 +203,9 @@ def handle_api_errors(func):
         if not getattr(frappe.local, "request_id", None):
             req_id = None
             if frappe.request:
-                req_id = frappe.request.headers.get("X-Request-Id") or frappe.request.environ.get("REQUEST_ID")
+                headers = getattr(frappe.request, "headers", None)
+                environ = getattr(frappe.request, "environ", None)
+                req_id = (headers.get("X-Request-Id") if headers else None) or (environ.get("REQUEST_ID") if environ else None)
             if not req_id:
                 import uuid
                 req_id = str(uuid.uuid4())
@@ -274,7 +276,8 @@ def handle_api_errors(func):
             frappe.log_error(title=log_title, message=log_message)
             frappe.local.message_log = []
             frappe.response["http_status_code"] = 400
-            return error_response("Database constraint or data validation error occurred", "VALIDATION_ERROR")
+            error_msg = get_error_message(e, "Database constraint or data validation error occurred")
+            return error_response(error_msg, "VALIDATION_ERROR")
         except Exception as e:
             import json
             log_title = f"API Error | {func.__name__}"

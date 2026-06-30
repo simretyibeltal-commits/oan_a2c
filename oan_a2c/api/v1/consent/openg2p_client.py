@@ -15,6 +15,8 @@ class OpenG2PFarmerSchema(BaseModel):
     name: str
     mobile: Optional[str] = None
     phone: Optional[str] = None
+    profile_image_url: Optional[str] = None
+    otp_identifier_type: Optional[str] = None
 
 
 class OpenG2PSearchFarmerResponse(OpenG2PResponse):

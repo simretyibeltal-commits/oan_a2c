@@ -15,7 +15,9 @@ class GetBasicProfileSchema(BaseModel):
 class UpdateBasicProfileSchema(BaseModel):
     lead_id: str = Field(..., min_length=1)
     email: SafeEmail = None
-    location: Optional[str] = None
+    region: Optional[str] = None
+    woreda: Optional[str] = None
+    kebele: Optional[str] = None
 
 class LoanApplicationIDSchema(BaseModel):
     application_id: str = Field(..., min_length=1)
@@ -115,7 +117,9 @@ def get_basic_profile(lead_id=None, include_consent_data=None):
             "last_name": profile.last_name,
             "phone_number": profile.phone_number,
             "email": profile.email,
-            "location": profile.location
+            "region": profile.region,
+            "woreda": profile.woreda,
+            "kebele": profile.kebele
         })
         consent_id = profile.consent_id or consent_id
 
@@ -134,7 +138,7 @@ def get_basic_profile(lead_id=None, include_consent_data=None):
 @frappe.whitelist(allow_guest=False, methods=["POST"])
 @validate_request(UpdateBasicProfileSchema)
 @handle_api_errors
-def update_basic_profile(lead_id=None, email=None, location=None):
+def update_basic_profile(lead_id=None, email=None, region=None, woreda=None, kebele=None):
     """
     Updates the email and location details for a lead's farmer profile.
     """
@@ -149,7 +153,9 @@ def update_basic_profile(lead_id=None, email=None, location=None):
     changed = False
     updates = {
         "email": email,
-        "location": location
+        "region": region,
+        "woreda": woreda,
+        "kebele": kebele
     }
     
     for field, value in updates.items():
@@ -192,8 +198,13 @@ def get_full_profile(**kwargs):
         "farmer_profile": farmer_profile,
         "first_name": doc.first_name,
         "last_name": doc.last_name,
-        "location": doc.location,
+        "region": doc.region,
+        "woreda": doc.woreda,
+        "kebele": doc.kebele,
+        "language": doc.language,
         "phone_number": doc.phone_number,
+        "id_type": doc.id_type,
+        "id_number": doc.id_number,
         "farmer_id": doc.farmer_id,
         "consent_id": doc.consent_id,
         "loan_type": doc.loan_type,
@@ -216,7 +227,7 @@ def get_full_profile(**kwargs):
         "total_farmland_size_as_landowner": float(doc.total_farmland_size_as_landowner) if doc.total_farmland_size_as_landowner else 0.0,
         "total_farmland_size_as_crop_sharing": float(doc.total_farmland_size_as_crop_sharing) if doc.total_farmland_size_as_crop_sharing else 0.0,
         "total_farmland_size_as_rented": float(doc.total_farmland_size_as_rented) if doc.total_farmland_size_as_rented else 0.0,
-        "farmland_size_hectares": float(doc.farmland_size_hectares) if doc.farmland_size_hectares else 0.0,
+        "farmland_size_hectares": doc.farmland_size_hectares,
         "land_ownership_status": doc.land_ownership_status,
         "soil_fertility_minerals": doc.soil_fertility_minerals,
         "moisture_levels": doc.moisture_levels,
@@ -615,33 +626,11 @@ def create_loan_application(**kwargs):
     loan_app.lead_id = lead_id
     loan_app.farmer_profile = farmer_profile.name
     
-    loan_app.first_name = farmer_profile.first_name
-    loan_app.last_name = farmer_profile.last_name
-    loan_app.location = farmer_profile.location
-    loan_app.phone_number = farmer_profile.phone_number 
-    loan_app.farmer_id = farmer_profile.farmer_id
-    loan_app.consent_id = farmer_profile.consent_id
-
-    # Populate farmer profile details into loan application
-    loan_app.date_of_birth = farmer_profile.date_of_birth
-    loan_app.gender = farmer_profile.gender
-    loan_app.marital_status = farmer_profile.marital_status
-    loan_app.size_of_family = farmer_profile.size_of_family
-    loan_app.number_of_children = farmer_profile.number_of_children
-    loan_app.no_of_females_family = farmer_profile.no_of_females_family
-    loan_app.no_of_males_family = farmer_profile.no_of_males_family
-    loan_app.source_of_income = farmer_profile.source_of_income
-    loan_app.education_level = farmer_profile.education_level
-    loan_app.family_member_owns_land_independently = farmer_profile.family_member_owns_land_independently
-    loan_app.total_farmland_size_as_landowner = farmer_profile.total_farmland_size_as_landowner
-    loan_app.total_farmland_size_as_crop_sharing = farmer_profile.total_farmland_size_as_crop_sharing
-    loan_app.total_farmland_size_as_rented = farmer_profile.total_farmland_size_as_rented
-    loan_app.farmland_size_hectares = farmer_profile.farmland_size_hectares
-    loan_app.land_ownership_status = farmer_profile.land_ownership_status
-    loan_app.soil_fertility_minerals = farmer_profile.soil_fertility_minerals
-    loan_app.moisture_levels = farmer_profile.moisture_levels
-    loan_app.certification_id = farmer_profile.certification_id
-    loan_app.certification_photo_url = farmer_profile.certification_photo_url
+    # Dynamically copy all matching fields from Farmer Profile to Loan Application
+    fields_to_ignore = {"name", "owner", "creation", "modified", "modified_by", "idx", "docstatus"}
+    for field in farmer_profile.meta.fields:
+        if field.fieldname not in fields_to_ignore and loan_app.meta.has_field(field.fieldname):
+            loan_app.set(field.fieldname, farmer_profile.get(field.fieldname))
     
     loan_app.loan_type = credit_infos[0].loan_type
     loan_app.loan_amount = flt(credit_infos[0].loan_amount)
