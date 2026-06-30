@@ -15,8 +15,13 @@ All endpoints under `/api/method/oan_a2c.*` require a Bearer JWT token unless ex
 **Token spec:**
 - Algorithm: HS256
 - Secret: `frappe.conf.encryption_key`
-- Payload: `{ sub: email, iss: "oan_a2c_identity_gateway", iat, exp (now + 1hr), roles: [] }`
+- Access Token Payload: `{ sub: email, iss: "oan_a2c_identity_gateway", iat, exp (now + 15 min), roles: [] }`
 - Header: `Authorization: Bearer <token>`
+
+**Refresh Token spec:**
+- Database-backed (`A2C User Refresh Token` DocType) using SHA-256 hash.
+- Expiration: 30 days if "Remember Me" is enabled, 1 day if disabled.
+- Rotation (RTR): The refresh token is rotated (invalidated and re-issued) upon every usage.
 
 **Middleware** (`api/middleware.py`, registered as `auth_hooks` in `hooks.py`):
 - Validates token cryptographically
@@ -28,6 +33,8 @@ All endpoints under `/api/method/oan_a2c.*` require a Bearer JWT token unless ex
 /api/method/oan_a2c.api.auth.login
 /api/method/oan_a2c.api.auth.forgot_password
 /api/method/oan_a2c.api.auth.reset_password
+/api/method/oan_a2c.api.auth.refresh
+/api/method/oan_a2c.api.auth.logout
 /api/method/oan_a2c.api.v1.webhook_consent_data.receive_consent_data
 /api/method/oan_a2c.api.v1.webhooks.lead_inbound
 ```
@@ -173,6 +180,7 @@ No JWT required.
 |-------|------|----------|-------|
 | **`usr`** | string | Yes | User email address |
 | **`pwd`** | string | Yes | User password |
+| `remember_me` | boolean | No | Extends refresh token expiry to 30 days if true (default is false, which expires in 1 day) |
 
 **Success response** (HTTP 200):
 ```json
@@ -181,6 +189,7 @@ No JWT required.
   "message": "Success",
   "data": {
     "token": "eyJ...",
+    "refresh_token": "a1b2c3d4...",
     "user": {
       "email": "user@domain.com",
       "full_name": "Full Name",
@@ -199,6 +208,59 @@ No JWT required.
 |-----------|------|------|---------|
 | Wrong credentials | 401 | `AUTHENTICATION_ERROR` | `"Incorrect email or password."` |
 | `encryption_key` missing in site config | 500 | `INTERNAL_ERROR` | `"An unexpected error occurred"` |
+
+---
+
+#### `POST /api/method/oan_a2c.api.auth.refresh`
+No JWT required.
+
+**Parameters:**
+
+| Param | Type | Required | Notes |
+|-------|------|----------|-------|
+| **`refresh_token`** | string | Yes | Raw refresh token string returned from login/refresh |
+
+**Success response** (HTTP 200):
+```json
+{
+  "status": "success",
+  "message": "Success",
+  "data": {
+    "token": "eyJ...",
+    "refresh_token": "new_rotated_refresh_token_string"
+  }
+}
+```
+
+**Error cases:**
+
+| Condition | HTTP | code | message |
+|-----------|------|------|---------|
+| Token invalid/not found | 401 | `AUTHENTICATION_ERROR` | `"Invalid or expired refresh token."` |
+| Token expired | 401 | `AUTHENTICATION_ERROR` | `"Refresh token has expired."` |
+| User is disabled | 401 | `AUTHENTICATION_ERROR` | `"User is disabled or does not exist."` |
+
+---
+
+#### `POST /api/method/oan_a2c.api.auth.logout`
+No JWT required.
+
+**Parameters:**
+
+| Param | Type | Required | Notes |
+|-------|------|----------|-------|
+| **`refresh_token`** | string | Yes | Raw refresh token string to revoke |
+
+**Success response** (HTTP 200):
+```json
+{
+  "status": "success",
+  "message": "Logged out successfully.",
+  "data": null
+}
+```
+
+**Error cases:** None (always returns success even if token was already deleted or doesn't exist).
 
 ---
 
@@ -299,6 +361,8 @@ All endpoints use the standard envelope.
     {
       "name": "LEAD-2026-0001",
       "phone_number": "+251911000000",
+      "first_name": "Abebe or null",
+      "last_name": "Kebede or null",
       "external_id": "TELCO-REF-001 or null",
       "lead_source": "Missed Call",
       "status": "Active",
@@ -897,7 +961,9 @@ All endpoints use `@handle_api_errors` and standard envelope.
     "last_name": "Kebede",
     "phone_number": "+251911000000",
     "email": "abebe@email.com or null",
-    "location": "Oromia, East Hararge or null",
+    "region": "Oromia",
+    "woreda": "East Hararge",
+    "kebele": "Gudina or null",
     "consent_request": {
       "name": "CR-2026-00001",
       "status": "Pending OTP",
@@ -917,7 +983,9 @@ All endpoints use `@handle_api_errors` and standard envelope.
     "last_name": "Kebede",
     "phone_number": "+251911000000",
     "email": null,
-    "location": "Oromia",
+    "region": "Oromia",
+    "woreda": "East Hararge",
+    "kebele": "Gudina",
     "consent_request": {
       "name": "CR-2026-00001",
       "status": "Approved",
@@ -956,9 +1024,11 @@ Method restricted to `POST`.
 |-------|------|----------|-------|
 | **`lead_id`** | string | Yes | See validate_lead quirk |
 | `email` | string | No | Validated format if provided |
-| `location` | string | No | |
+| `region` | string | No | |
+| `woreda` | string | No | |
+| `kebele` | string | No | |
 
-At least one of `email` or `location` should be provided (no error if both omitted — returns current values).
+At least one field should be provided (no error if omitted — returns current values).
 
 **Success response** (HTTP 200):
 ```json
@@ -967,7 +1037,9 @@ At least one of `email` or `location` should be provided (no error if both omitt
   "message": "Basic profile updated successfully",
   "data": {
     "email": "new@email.com",
-    "location": "Oromia, East Hararge"
+    "region": "Oromia",
+    "woreda": "East Hararge",
+    "kebele": "Gudina"
   }
 }
 ```
@@ -1002,8 +1074,13 @@ At least one of `email` or `location` should be provided (no error if both omitt
     "farmer_profile": "FARMPROF-2026-0001",
     "first_name": "Abebe",
     "last_name": "Kebede",
-    "location": "Oromia",
+    "region": "Oromia",
+    "woreda": "East Hararge",
+    "kebele": "Gudina",
+    "language": "en_US",
     "phone_number": "+251911000000",
+    "id_type": "uid",
+    "id_number": "567890",
     "farmer_id": "FAYDA-123",
     "consent_id": "CONSENT-2026-0001",
     "loan_type": "Crop Loan",
@@ -1026,11 +1103,11 @@ At least one of `email` or `location` should be provided (no error if both omitt
     "total_farmland_size_as_landowner": 2.5,
     "total_farmland_size_as_crop_sharing": 0.0,
     "total_farmland_size_as_rented": 1.0,
-    "farmland_size_hectares": 3.5,
+    "farmland_size_hectares": "1.2, 0.2, 0.1",
     "land_ownership_status": "Owner or null",
     "soil_fertility_minerals": "High or null",
     "moisture_levels": "Medium or null",
-    "certification_id": "CERT-001 or null",
+    "certification_id": "CERT-001, CERT-002 or null",
     "certification_photo_url": "url or null"
   }
 }
@@ -1470,7 +1547,12 @@ JWT-exempt. Called by OpenG2P system.
     "approved_at": "2026-01-15T10:00:00Z"
   },
   "farmer": { "id": 42, "name": "Abebe Kebede" },
-  "selected_data": { "farmer": { "given_name": "Abebe", ... } }
+  "selected_data": { 
+    "10010": { 
+      "Full Name": "Abebe Kebede",
+      "Mobile Number": ["+251911000000"]
+    } 
+  }
 }
 ```
 
@@ -1522,12 +1604,13 @@ All three endpoints accept parameters via JSON body, form dict, or kwargs (merge
   "status": "success",
   "message": "Farmer found successfully.",
   "data": {
-    "farmer_db_id": 42,
     "farmer": {
       "id": 42,
       "name": "Abebe Kebede",
       "mobile": "+251911000000",
-      "phone": "+251911000000"
+      "phone": "+251911000000",
+      "profile_image_url": "https://example.com/image.jpg",
+      "type": "FIN"
     }
   }
 }
