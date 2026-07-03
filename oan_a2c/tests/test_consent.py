@@ -118,9 +118,9 @@ class TestConsentAPI(unittest.TestCase):
         
         return consent_name
 
-    @patch("oan_a2c.api.v1.consent.consent.enqueue_websub_delivery")
+    @patch("oan_a2c.api.v1.consent.consent._save_direct_consent_response_to_lead")
     @patch("oan_a2c.api.v1.consent.consent.OpenG2PConsentClient")
-    def test_verify_and_submit_consent(self, MockClient, MockEnqueue):
+    def test_verify_and_submit_consent(self, MockClient, MockSaveDirect):
         mock_instance = MockClient.return_value
         
         # Create doc and send OTP first
@@ -194,5 +194,5 @@ class TestConsentAPI(unittest.TestCase):
             12 * 30
         )
         
-        # Verify WebSub was queued
-        MockEnqueue.assert_called_once()
+        # Verify the direct consent-response save (internal queued path) was triggered
+        MockSaveDirect.assert_called_once()
