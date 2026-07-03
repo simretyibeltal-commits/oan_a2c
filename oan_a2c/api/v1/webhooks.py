@@ -1,8 +1,11 @@
 import frappe
 from frappe import _
+from frappe.utils import sanitize_html
+from oan_a2c.api.utils import success_response, handle_api_errors
 
 
 @frappe.whitelist(allow_guest=False)
+@handle_api_errors
 def lead_inbound(phone_number=None, lead_source="Missed Call", external_ref_id=None, timestamp=None):
 	"""
 	Automated lead intake from external telco systems (IVR / missed call gateways).
@@ -39,7 +42,7 @@ def lead_inbound(phone_number=None, lead_source="Missed Call", external_ref_id=N
 			return _update_existing_lead(existing_by_ref, lead_source, external_ref_id, timestamp)
 
 	# 2. Secondary Deduplication Check: By Phone Number (Active funnel)
-	active_statuses = ("Open", "Initiated")
+	active_statuses = ("Active", "Verified")
 	existing_by_phone = frappe.db.get_value(
 		"A2C Lead",
 		{"phone_number": phone_number, "status": ("in", active_statuses)},
@@ -53,15 +56,14 @@ def lead_inbound(phone_number=None, lead_source="Missed Call", external_ref_id=N
 	new_lead.phone_number = phone_number
 	new_lead.external_id = external_ref_id
 	new_lead.lead_source = lead_source
-	new_lead.status = "Open"
+	new_lead.status = "Active"
 	new_lead.call_notes = _build_event_note(lead_source, external_ref_id, timestamp)
 	new_lead.insert(ignore_permissions=False)
 
-	return {
-		"status": "success",
-		"lead_id": new_lead.name,
-		"message": "Lead captured successfully.",
-	}
+	return success_response(
+		data={"lead_id": new_lead.name},
+		message="Lead captured successfully."
+	)
 
 
 def _update_existing_lead(lead_name, lead_source, external_ref_id, timestamp):
@@ -80,18 +82,33 @@ def _update_existing_lead(lead_name, lead_source, external_ref_id, timestamp):
 
 	existing_doc.save(ignore_permissions=False)
 
-	return {
-		"status": "success",
-		"lead_id": lead_name,
-		"message": "Existing active lead updated with new event.",
-	}
+	return success_response(
+		data={"lead_id": lead_name},
+		message="Existing active lead updated with new event."
+	)
 
 
 def _build_event_note(lead_source, external_ref_id, timestamp):
-	"""Formats a single inbound event into a human-readable audit line."""
+	"""Formats a single inbound event into a human-readable audit line.
+
+	Note format is a contract parsed back by get_lead_call_logs in leads.py:
+	"Source: ... | Ref ID: ... | Received: ... | Timestamp: ...". Keep the
+	"Key: value" shape and the " | " separators intact.
+
+	"Received" is the server-side receive time and is ALWAYS present, so every
+	event has a trustworthy timestamp. "Timestamp" is the caller-reported time
+	(from the external telco/IVR system) and is optional / untrusted.
+	"""
+	if external_ref_id:
+		external_ref_id = sanitize_html(external_ref_id)
+	if timestamp:
+		timestamp = sanitize_html(timestamp)
+
 	parts = [f"Source: {lead_source}"]
 	if external_ref_id:
 		parts.append(f"Ref ID: {external_ref_id}")
+	# Server-generated receive time — reliable, always recorded.
+	parts.append(f"Received: {frappe.utils.now()}")
 	if timestamp:
 		parts.append(f"Timestamp: {timestamp}")
 	return " | ".join(parts)

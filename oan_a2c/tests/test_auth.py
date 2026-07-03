@@ -2,8 +2,8 @@ import frappe
 import unittest
 import jwt
 import datetime
-from oan_a2c.api.auth import login, forgot_password, reset_password
-from oan_a2c.api.middleware import validate_jwt_request
+from oan_a2c.api.auth import login, forgot_password, reset_password, refresh, logout
+from oan_a2c.api.middleware import validate_jwt_request, JWTUnauthorized
 
 
 class TestAuthAPI(unittest.TestCase):
@@ -27,8 +27,8 @@ class TestAuthAPI(unittest.TestCase):
 			user.first_name = "Test Agent"
 			user.insert(ignore_permissions=True)
 
-			from frappe.core.doctype.user.user import update_password
-			update_password(new_password=cls.test_password, user=cls.test_email)
+		from frappe.utils.password import update_password
+		update_password(user=cls.test_email, pwd=cls.test_password)
 
 		# Ensure a mock encryption key is present in isolated CI/CD environments
 		if not frappe.conf.get("encryption_key"):
@@ -98,15 +98,15 @@ class TestAuthAPI(unittest.TestCase):
 
 		# Function returns the inner dict; Frappe adds the outer envelope on the wire
 		self.assertEqual(response.get("status"), "success")
-		self.assertIn("token", response)
+		self.assertIn("token", response.get("data", {}))
 
-		token = response["token"]
+		token = response["data"]["token"]
 		payload = jwt.decode(token, frappe.conf.encryption_key, algorithms=["HS256"])
 		self.assertEqual(payload["sub"], self.test_email)
 		self.assertEqual(payload["iss"], "oan_a2c_identity_gateway")
 
 		# Confirm user block is present with the bank field
-		user_block = response.get("user", {})
+		user_block = response.get("data", {}).get("user", {})
 		self.assertEqual(user_block.get("email"), self.test_email)
 		self.assertIn("bank", user_block)
 
@@ -114,14 +114,14 @@ class TestAuthAPI(unittest.TestCase):
 		response = login(self.test_email, "WrongPassword999")
 
 		self.assertEqual(frappe.local.response.get("http_status_code"), 401)
-		self.assertEqual(response.get("exception"), "frappe.exceptions.AuthenticationError")
+		self.assertEqual(response.get("code"), "AUTHENTICATION_ERROR")
 
 	def test_3_middleware_valid_jwt(self):
 		payload = {
 			"sub": self.test_email,
 			"exp": datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)
 		}
-		token = jwt.encode(payload, frappe.conf.encryption_key, algorithm="HS256")
+		token = jwt.encode(payload, frappe.conf.encryption_key, algorithm="HS256", headers={"kid": "v1"})
 
 		# Patch frappe.local.request — this is what middleware.py reads
 		frappe.local.request = frappe._dict({"path": "/api/method/oan_a2c.api.v1.get_leads"})
@@ -135,7 +135,7 @@ class TestAuthAPI(unittest.TestCase):
 		frappe.local.request = frappe._dict({"path": "/api/method/oan_a2c.api.v1.get_leads"})
 		self._mock_headers = {}
 
-		with self.assertRaises(frappe.AuthenticationError):
+		with self.assertRaises(JWTUnauthorized):
 			validate_jwt_request()
 
 	def test_5_middleware_expired_jwt(self):
@@ -144,12 +144,12 @@ class TestAuthAPI(unittest.TestCase):
 			# Already expired 1 hour ago
 			"exp": datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)
 		}
-		token = jwt.encode(payload, frappe.conf.encryption_key, algorithm="HS256")
+		token = jwt.encode(payload, frappe.conf.encryption_key, algorithm="HS256", headers={"kid": "v1"})
 
 		frappe.local.request = frappe._dict({"path": "/api/method/oan_a2c.api.v1.get_leads"})
 		self._mock_headers["Authorization"] = f"Bearer {token}"
 
-		with self.assertRaises(frappe.AuthenticationError):
+		with self.assertRaises(JWTUnauthorized):
 			validate_jwt_request()
 
 	def test_6_forgot_password(self):
@@ -163,6 +163,7 @@ class TestAuthAPI(unittest.TestCase):
 			"/api/method/oan_a2c.api.auth.login",
 			"/api/method/oan_a2c.api.auth.forgot_password",
 			"/api/method/oan_a2c.api.auth.reset_password",
+			"/api/method/oan_a2c.api.v1.websub_subscriber.callback"
 		]:
 			frappe.local.request = frappe._dict({"path": path})
 			self._mock_headers = {}  # No token
@@ -170,3 +171,145 @@ class TestAuthAPI(unittest.TestCase):
 			# Should return None (early exit) without raising
 			result = validate_jwt_request()
 			self.assertIsNone(result, f"Middleware should bypass {path} without a token")
+
+	def test_8_middleware_invalid_kid(self):
+		payload = {
+			"sub": self.test_email,
+			"exp": datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)
+		}
+		# Token with invalid kid
+		token_invalid_kid = jwt.encode(payload, frappe.conf.encryption_key, algorithm="HS256", headers={"kid": "v2"})
+		frappe.local.request = frappe._dict({"path": "/api/method/oan_a2c.api.v1.get_leads"})
+		self._mock_headers["Authorization"] = f"Bearer {token_invalid_kid}"
+		with self.assertRaises(JWTUnauthorized) as context:
+			validate_jwt_request()
+		self.assertIn("Invalid or missing Key ID", context.exception.message)
+
+		# Token with missing kid
+		token_missing_kid = jwt.encode(payload, frappe.conf.encryption_key, algorithm="HS256")
+		self._mock_headers["Authorization"] = f"Bearer {token_missing_kid}"
+		with self.assertRaises(JWTUnauthorized) as context:
+			validate_jwt_request()
+		self.assertIn("Invalid or missing Key ID", context.exception.message)
+
+	def test_9_middleware_disabled_user(self):
+		payload = {
+			"sub": self.test_email,
+			"exp": datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)
+		}
+		token = jwt.encode(payload, frappe.conf.encryption_key, algorithm="HS256", headers={"kid": "v1"})
+		frappe.local.request = frappe._dict({"path": "/api/method/oan_a2c.api.v1.get_leads"})
+		self._mock_headers["Authorization"] = f"Bearer {token}"
+
+		# Disable user temporarily
+		frappe.db.set_value("User", self.test_email, "enabled", 0)
+		frappe.db.commit()
+
+		try:
+			with self.assertRaises(JWTUnauthorized) as context:
+				validate_jwt_request()
+			self.assertIn("User is disabled", context.exception.message)
+		finally:
+			# Restore user
+			frappe.db.set_value("User", self.test_email, "enabled", 1)
+			frappe.db.commit()
+
+	def test_10_get_me(self):
+		from oan_a2c.api.auth import get_me
+
+		# 1. Guest request should fail
+		frappe.set_user("Guest")
+		response = get_me()
+		self.assertEqual(response.get("status"), "error")
+		self.assertEqual(response.get("code"), "AUTHENTICATION_ERROR")
+
+		# 2. Authenticated request should succeed
+		frappe.set_user(self.test_email)
+		response = get_me()
+		self.assertEqual(response.get("status"), "success")
+		user_data = response.get("data", {})
+		self.assertEqual(user_data.get("email"), self.test_email)
+		self.assertEqual(user_data.get("full_name"), "Test Agent")
+		self.assertIn("roles", user_data)
+		self.assertIn("bank", user_data)
+
+	def test_11_refresh_token_rotation_success(self):
+		response = login(self.test_email, self.test_password, remember_me=True)
+		self.assertEqual(response.get("status"), "success")
+		data = response.get("data", {})
+		self.assertIn("token", data)
+		self.assertIn("refresh_token", data)
+
+		old_refresh_token = data["refresh_token"]
+		import hashlib
+		old_hash = hashlib.sha256(old_refresh_token.encode("utf-8")).hexdigest()
+
+		# Verify token document was created
+		self.assertTrue(frappe.db.exists("A2C User Refresh Token", {"token_hash": old_hash}))
+
+		# Refresh
+		refresh_response = refresh(old_refresh_token)
+		self.assertEqual(refresh_response.get("status"), "success")
+		refresh_data = refresh_response.get("data", {})
+		self.assertIn("token", refresh_data)
+		self.assertIn("refresh_token", refresh_data)
+
+		new_refresh_token = refresh_data["refresh_token"]
+		new_hash = hashlib.sha256(new_refresh_token.encode("utf-8")).hexdigest()
+
+		# Old token should be deleted (RTR), new token should exist
+		self.assertFalse(frappe.db.exists("A2C User Refresh Token", {"token_hash": old_hash}))
+		self.assertTrue(frappe.db.exists("A2C User Refresh Token", {"token_hash": new_hash}))
+
+	def test_12_refresh_token_expired_or_invalid(self):
+		# Invalid token
+		response = refresh("some_invalid_token_random")
+		self.assertEqual(response.get("status"), "error")
+		self.assertEqual(response.get("code"), "AUTHENTICATION_ERROR")
+		self.assertIn("Invalid or expired", response.get("message"))
+
+		# Expired token
+		import hashlib
+		from frappe.utils import add_days, now_datetime
+		raw_token = frappe.generate_hash(length=40)
+		token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+
+		# Create an expired token record in db
+		token_doc = frappe.get_doc({
+			"doctype": "A2C User Refresh Token",
+			"user": self.test_email,
+			"token_hash": token_hash,
+			"expiry": add_days(now_datetime(), -2),  # 2 days in the past
+			"remember_me": 1
+		})
+		token_doc.insert(ignore_permissions=True)
+		frappe.db.commit()
+
+		self.assertTrue(frappe.db.exists("A2C User Refresh Token", {"token_hash": token_hash}))
+
+		# Try to refresh using it
+		response = refresh(raw_token)
+		self.assertEqual(response.get("status"), "error")
+		self.assertEqual(response.get("code"), "AUTHENTICATION_ERROR")
+		self.assertIn("expired", response.get("message"))
+
+		# Verify it got deleted upon detection
+		self.assertFalse(frappe.db.exists("A2C User Refresh Token", {"token_hash": token_hash}))
+
+	def test_13_logout_success(self):
+		response = login(self.test_email, self.test_password)
+		data = response.get("data", {})
+		refresh_token = data["refresh_token"]
+
+		import hashlib
+		token_hash = hashlib.sha256(refresh_token.encode("utf-8")).hexdigest()
+		self.assertTrue(frappe.db.exists("A2C User Refresh Token", {"token_hash": token_hash}))
+
+		# Call logout
+		logout_response = logout(refresh_token)
+		self.assertEqual(logout_response.get("status"), "success")
+
+		# Verify token is deleted
+		self.assertFalse(frappe.db.exists("A2C User Refresh Token", {"token_hash": token_hash}))
+
+
