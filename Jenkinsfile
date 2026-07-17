@@ -21,17 +21,13 @@ pipeline {
                         IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}"
                         BRANCH="${GIT_BRANCH##*/}"
 
-                        # Clone frappe_docker which has the Containerfile
                         rm -rf frappe_docker
                         git clone https://github.com/frappe/frappe_docker.git frappe_docker
 
-                        # Prepare apps.json pointing to correct branch
                         echo "[{\"url\":\"https://github.com/Centre-for-Open-Societal-Systems/oan_a2c.git\",\"branch\":\"${BRANCH}\"}]" > /tmp/apps.json
 
                         echo "Building for branch: ${BRANCH}"
-                        cat /tmp/apps.json
 
-                        # Build from frappe_docker directory
                         cd frappe_docker
                         DOCKER_BUILDKIT=1 docker buildx build \
                             --build-arg FRAPPE_PATH=${FRAPPE_PATH} \
@@ -64,6 +60,11 @@ pipeline {
                         docker push ${IMAGE_URI}:${BRANCH}
 
                         echo "Pushed ${IMAGE_URI}:${BRANCH}-${BUILD_NUMBER}"
+
+                        echo "=== Cleaning up local images ==="
+                        docker rmi ${IMAGE_URI}:${BRANCH}-${BUILD_NUMBER} || true
+                        docker system prune -f || true
+                        echo "=== Cleanup complete ==="
                     '''
                 }
             }
@@ -110,22 +111,6 @@ pipeline {
                             echo "Branch ${branch} — skipping deployment"
                         }
                     }
-                }
-            }
-        }
-
-        stage('Cleanup') {
-            steps {
-                withCredentials([string(credentialsId: 'AWS_ACCOUNT_ID', variable: 'AWS_ACCOUNT_ID')]) {
-                    sh '''
-                        BRANCH="${GIT_BRANCH##*/}"
-                        IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}"
-
-                        docker rmi ${IMAGE_URI}:${BRANCH}-${BUILD_NUMBER} || true
-                        docker system prune -f || true
-
-                        echo "=== Cleanup complete ==="
-                    '''
                 }
             }
         }
